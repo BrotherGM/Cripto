@@ -22,17 +22,14 @@ grid/
 
 ## Запуск в Docker (для сервера)
 
-В Docker поднимается **только приложение** (Django/gunicorn). **PostgreSQL уже
-установлен на сервере** — контейнер подключается к нему по `host.docker.internal`.
-Внешний порт приложения — **8077**.
+В Docker поднимается **только приложение** (Django/gunicorn) на порту **8077**.
+**PostgreSQL уже установлен на сервере.** Контейнер работает в сети хоста
+(`network_mode: host`), поэтому подключается к Postgres по `localhost` — так же,
+как обычное приложение на сервере. Перенастраивать Postgres не нужно.
 
-**Подготовка PostgreSQL на сервере** (один раз):
+**Подготовка БД на сервере** (один раз):
 ```bash
-sudo -u postgres createdb Cripto                 # создать БД (если ещё нет)
-# разрешить контейнеру подключаться к Postgres хоста:
-#  1) postgresql.conf:  listen_addresses = '*'   (или адрес docker-моста)
-#  2) pg_hba.conf:      host  all  all  172.16.0.0/12  scram-sha-256
-sudo systemctl restart postgresql
+sudo -u postgres createdb Cripto      # создать пустую БД (таблицы создаст миграция)
 ```
 
 **Запуск приложения:**
@@ -41,11 +38,14 @@ git clone git@github.com:BrotherGM/Cripto.git
 cd Cripto
 
 cp .env.example .env
-nano .env        # ключи OKX (демо: OKX_FLAG=1) + DB_NAME/DB_USER/DB_PASSWORD вашего Postgres
-                 # DB_HOST оставьте host.docker.internal
+nano .env        # ключи OKX (демо: OKX_FLAG=1) + DB_USER/DB_PASSWORD вашего Postgres
+                 # DB_HOST=localhost, DB_NAME=Cripto
 
 docker compose up -d --build
 ```
+
+> `network_mode: host` работает на Linux-сервере. На macOS (Docker Desktop) сеть
+> хоста не поддерживается — для локального теста используйте Postgres в контейнере.
 
 При старте контейнер автоматически: ждёт БД → применяет миграции → собирает статику →
 создаёт суперпользователя (из `DJANGO_SUPERUSER_*` в `.env`).

@@ -3,13 +3,12 @@ services:
     build: .
     container_name: cripto_web
     env_file: .env
-    # PostgreSQL установлен на самом сервере (вне Docker).
-    # Контейнер обращается к нему по адресу host.docker.internal -> хост.
-    # DB_HOST переопределяем тут (в .env localhost — для запуска без Docker).
+    # Сеть хоста: контейнер обращается к Postgres по localhost — так же, как
+    # обычное приложение на сервере (как ваш рабочий karting). Не требует
+    # перенастройки Postgres (listen_addresses/pg_hba). Подходит для Linux-сервера.
+    network_mode: "host"
     environment:
-      DB_HOST: host.docker.internal
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "8077:8000"   # внешний порт 8077 -> gunicorn внутри контейнера (8000)
+      DB_HOST: localhost
+    # gunicorn слушает порт 8077 прямо на хосте (при host-сети ports: не используется)
+    command: gunicorn cripto.wsgi:application --bind 0.0.0.0:8077 --workers 3 --timeout 120
     restart: unless-stopped
