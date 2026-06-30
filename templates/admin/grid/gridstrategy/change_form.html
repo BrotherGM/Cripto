@@ -1,0 +1,15 @@
+{% extends "admin/change_form.html" %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  {% if original %}
+  <div class="submit-row" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <input type="submit" value="▶️ Запустить торговлю" name="_start_trading"
+           style="background:#1f7a3d; color:#fff;">
+    <input type="submit" value="⏹ Остановить торговлю" name="_stop_trading"
+           style="background:#a33; color:#fff;">
+    <a class="button" href="/dashboard/{{ original.pk }}/" target="_blank"
+       style="background:#264b7a; color:#fff;">📈 Открыть графики</a>
+  </div>
+  {% endif %}
+{% endblock %}

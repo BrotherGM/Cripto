@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16
+    container_name: cripto_db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-Cripto}
+      POSTGRES_USER: ${DB_USER:-cripto}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cripto}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cripto} -d ${DB_NAME:-Cripto}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build: .
+    container_name: cripto_web
+    env_file: .env
+    environment:
+      # внутри сети compose БД доступна по имени сервиса `db`
+      DB_HOST: db
+      DB_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,21 @@
+{% load i18n %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  <input type="search" id="nav-filter"
+         placeholder="{% translate 'Start typing to filter…' %}"
+         aria-label="{% translate 'Filter navigation items' %}">
+
+  {# Отдельный блок меню: Графики торговли #}
+  <div class="module" id="grid-charts-nav">
+    <table>
+      <caption>
+        <a href="/dashboard/" class="section" title="Графики торговли">📈 Графики торговли</a>
+      </caption>
+      <tbody>
+        <tr><th scope="row"><a href="/dashboard/">Дашборд — все стратегии</a></th></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% include 'admin/app_list.html' with app_list=available_apps show_changelinks=False %}
+</nav>

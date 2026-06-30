@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cripto — Дашборд стратегий</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#0e1117;
+           color:#e6e6e6; margin:0; padding:24px; }
+    h1 { font-size:22px; margin:0 0 16px; }
+    a { color:#4ea1ff; text-decoration:none; }
+    .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    table { width:100%; border-collapse:collapse; background:#161b22; border-radius:10px; overflow:hidden; }
+    th, td { padding:12px 14px; text-align:left; border-bottom:1px solid #232a33; font-size:14px; }
+    th { background:#1b212b; color:#9aa4b2; font-weight:600; }
+    tr:hover td { background:#1a2029; }
+    .badge { padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; }
+    .running { background:#10391f; color:#3fdc7a; }
+    .ready   { background:#0d3338; color:#39d6c8; }
+    .stopped { background:#3a2c0d; color:#e0b341; }
+    .emergency { background:#3a1212; color:#ff6b6b; }
+    .draft   { background:#23262d; color:#9aa4b2; }
+    .empty { padding:40px; text-align:center; color:#9aa4b2; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1>📈 Cripto — торговые стратегии</h1>
+    <span><a href="/admin/">⚙️ Админка</a></span>
+  </div>
+
+  {% if strategies %}
+  <table>
+    <thead>
+      <tr>
+        <th>Стратегия</th><th>Инструмент</th><th>Статус</th>
+        <th>Диапазон</th><th>Уровней</th><th>Объём</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in strategies %}
+      <tr>
+        <td><b>{{ s.name }}</b></td>
+        <td>{{ s.inst_id }}</td>
+        <td><span class="badge {{ s.status }}">{{ s.get_status_display }}</span></td>
+        <td>{{ s.p_min|floatformat:"-2" }} … {{ s.p_max|floatformat:"-2" }}</td>
+        <td>{{ s.levels }}</td>
+        <td>{{ s.order_size|floatformat:"-4" }}</td>
+        <td><a href="{% url 'grid:strategy_chart' s.id %}">Графики →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="empty">Стратегий пока нет. Создайте их в <a href="/admin/grid/gridstrategy/add/">админке</a>.</div>
+  {% endif %}
+</body>
+</html>

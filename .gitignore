@@ -1,0 +1,32 @@
+# Виртуальное окружение
+venv313/
+venv/
+.venv/
+
+# Секреты и локальные настройки
+.env
+.env.local
+
+# Сэмпл okx_market_maker (не часть проекта)
+okx/
+
+# Личные заметки (содержат доступы)
+commands.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Django
+db.sqlite3
+staticfiles/
+media/
+
+# Логи фонового цикла торговли
+logs/
+*.log
+
+# Прочее
+.DS_Store
+.claude/

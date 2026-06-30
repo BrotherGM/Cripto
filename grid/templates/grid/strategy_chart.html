@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ strategy.name }} — графики</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:#0e1117; color:#e6e6e6; margin:0; padding:20px; }
+    a { color:#4ea1ff; text-decoration:none; }
+    .top { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    h1 { font-size:20px; margin:0; }
+    .muted { color:#9aa4b2; font-size:13px; }
+    .cards { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0 18px; }
+    .card { background:#161b22; border:1px solid #232a33; border-radius:10px; padding:10px 14px; min-width:120px; }
+    .card .k { color:#9aa4b2; font-size:12px; }
+    .card .v { font-size:18px; font-weight:700; margin-top:3px; }
+    .pos { color:#3fdc7a; } .neg { color:#ff6b6b; }
+    .controls { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+    select, button { background:#1b212b; color:#e6e6e6; border:1px solid #2a313c; border-radius:7px; padding:6px 10px; font-size:13px; cursor:pointer; }
+    .chart { background:#161b22; border:1px solid #232a33; border-radius:10px; padding:6px; margin-bottom:18px; }
+    .badge { padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; background:#10391f; color:#3fdc7a; }
+    .orders-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
+    .filters { display:flex; gap:6px; align-items:center; }
+    .flt { background:#1b212b; color:#9aa4b2; border:1px solid #2a313c; border-radius:7px; padding:5px 12px; font-size:13px; cursor:pointer; }
+    .flt.active { background:#264b7a; color:#fff; border-color:#264b7a; }
+    .otable { width:100%; border-collapse:collapse; font-size:13px; }
+    .otable th, .otable td { padding:8px 10px; text-align:left; border-bottom:1px solid #232a33; white-space:nowrap; }
+    .otable th { color:#9aa4b2; font-weight:600; position:sticky; top:0; background:#161b22; }
+    .otable tr:hover td { background:#1a2029; }
+    .buy { color:#3fdc7a; } .sell { color:#ff6b6b; }
+    .st { padding:2px 8px; border-radius:14px; font-size:12px; font-weight:600; }
+    .st-open { background:#0d2f3a; color:#39c8d6; }
+    .st-filled { background:#10391f; color:#3fdc7a; }
+    .st-canceled { background:#2c2f36; color:#9aa4b2; }
+    .st-failed { background:#3a1212; color:#ff6b6b; }
+    .otable .empty-row td { text-align:center; color:#9aa4b2; padding:18px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>{{ strategy.name }} <span id="status" class="badge">{{ strategy.get_status_display }}</span></h1>
+      <div class="muted">{{ strategy.inst_id }} · обновление каждую секунду · <span id="updated"></span></div>
+    </div>
+    <div><a href="{% url 'grid:dashboard' %}">← К списку</a> &nbsp; <a href="/admin/grid/gridstrategy/{{ strategy.id }}/change/">⚙️ В админке</a></div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="controls">
+    <label class="muted">Таймфрейм:</label>
+    <select id="bar">
+      <option>1m</option><option>5m</option><option>15m</option>
+      <option selected>1H</option><option>4H</option><option>1D</option>
+    </select>
+    <button id="refresh">↻ Обновить</button>
+  </div>
+
+  <div class="chart"><div id="priceChart" style="height:520px;"></div></div>
+  <div class="chart"><div id="pnlChart" style="height:280px;"></div></div>
+
+  <div class="chart" style="padding:14px;">
+    <div class="orders-head">
+      <h2 style="margin:0; font-size:16px;">Мои сделки (ордера)</h2>
+      <div class="filters">
+        <button class="flt active" data-f="all">Все</button>
+        <button class="flt" data-f="open">Открытые</button>
+        <button class="flt" data-f="closed">Закрытые</button>
+        <span id="ordersCount" class="muted"></span>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="ordersTable" class="otable">
+        <thead>
+          <tr>
+            <th>Время</th><th>Уровень</th><th>Сторона</th><th>Цена</th>
+            <th>Объём</th><th>Исполнено</th><th>Статус</th><th>ID на бирже</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const PK = {{ strategy.id }};
+const LAYOUT = {
+  paper_bgcolor:'#161b22', plot_bgcolor:'#161b22',
+  font:{color:'#cbd3dd'}, margin:{l:60,r:20,t:30,b:40},
+  xaxis:{gridcolor:'#232a33'}, yaxis:{gridcolor:'#232a33'},
+  legend:{orientation:'h', y:1.08},
+};
+
+function fmt(n, d=2){ return (n==null)?'—':Number(n).toLocaleString('ru-RU',{maximumFractionDigits:d}); }
+
+function renderCards(d){
+  const st = d.stats, s = d.strategy;
+  const pnl = st.realized_pnl || 0;
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><div class="k">Текущая цена</div><div class="v">${fmt(s.current_price)}</div></div>
+    <div class="card"><div class="k">Реализованный PnL</div><div class="v ${pnl>=0?'pos':'neg'}">${fmt(pnl)}</div></div>
+    <div class="card"><div class="k">Позиция (база)</div><div class="v">${fmt(st.position_qty,4)}</div></div>
+    <div class="card"><div class="k">Средняя (VWAP)</div><div class="v">${fmt(st.position_avg)}</div></div>
+    <div class="card"><div class="k">Ордеров активно</div><div class="v">${st.orders_live}</div></div>
+    <div class="card"><div class="k">Сделок (buy/sell)</div><div class="v">${st.trades_buy}/${st.trades_sell}</div></div>`;
+  document.getElementById('status').textContent = s.status;
+}
+
+function priceChart(d){
+  const c = d.candles;
+  const traces = [];
+  if (c.length){
+    traces.push({
+      type:'candlestick', name:'Цена',
+      x:c.map(p=>p.t), open:c.map(p=>p.o), high:c.map(p=>p.h),
+      low:c.map(p=>p.l), close:c.map(p=>p.c),
+      increasing:{line:{color:'#3fdc7a'}}, decreasing:{line:{color:'#ff6b6b'}},
+    });
+  }
+  // метки сделок
+  const buys = d.trades.filter(t=>t.side==='buy'), sells = d.trades.filter(t=>t.side==='sell');
+  if (buys.length) traces.push({type:'scatter',mode:'markers',name:'Покупка',
+    x:buys.map(t=>t.t), y:buys.map(t=>t.price),
+    marker:{symbol:'triangle-up',size:12,color:'#3fdc7a',line:{color:'#0e1117',width:1}}});
+  if (sells.length) traces.push({type:'scatter',mode:'markers',name:'Продажа',
+    x:sells.map(t=>t.t), y:sells.map(t=>t.price),
+    marker:{symbol:'triangle-down',size:12,color:'#ff6b6b',line:{color:'#0e1117',width:1}}});
+
+  // уровни сетки + стоп-лосс как горизонтальные линии
+  const shapes = d.levels.map(lv=>({
+    type:'line', xref:'paper', x0:0, x1:1, y0:lv.price, y1:lv.price,
+    line:{color: lv.side==='buy' ? 'rgba(63,220,122,.35)' : 'rgba(255,107,107,.35)',
+          width:1, dash:'dot'},
+  }));
+  if (d.strategy.stop_loss) shapes.push({type:'line',xref:'paper',x0:0,x1:1,
+    y0:d.strategy.stop_loss,y1:d.strategy.stop_loss,
+    line:{color:'#e0b341',width:1.5,dash:'dash'}});
+
+  const layout = Object.assign({}, LAYOUT, {
+    title:{text:'Цена + сетка ордеров',font:{size:14}},
+    xaxis:Object.assign({}, LAYOUT.xaxis, {rangeslider:{visible:false}}),
+    shapes,
+  });
+  Plotly.react('priceChart', traces, layout, {displayModeBar:false, responsive:true});
+}
+
+function pnlChart(d){
+  const p = d.pnl;
+  const trace = {type:'scatter', mode:'lines', name:'PnL',
+    x:p.map(x=>x.t), y:p.map(x=>x.pnl), fill:'tozeroy',
+    line:{color:'#4ea1ff'}, fillcolor:'rgba(78,161,255,.12)'};
+  const layout = Object.assign({}, LAYOUT, {title:{text:'Кумулятивный реализованный PnL',font:{size:14}}});
+  Plotly.react('pnlChart', [trace], layout, {displayModeBar:false, responsive:true});
+}
+
+const REFRESH_MS = 1000;   // обновление раз в секунду
+let _timer = null;
+
+// Открытые = ещё активны на бирже; Закрытые = завершены
+const OPEN_STATES = ['pending','live','partially_filled'];
+let ordersFilter = 'all';
+let lastOrders = [];
+
+function stClass(state){
+  if (OPEN_STATES.includes(state)) return 'st-open';
+  if (state==='filled') return 'st-filled';
+  if (state==='failed') return 'st-failed';
+  return 'st-canceled';
+}
+function timeStr(iso){ return new Date(iso).toLocaleString('ru-RU'); }
+
+function renderOrders(orders){
+  lastOrders = orders;
+  const isOpen = o => OPEN_STATES.includes(o.state);
+  let rows = orders;
+  if (ordersFilter==='open')   rows = orders.filter(isOpen);
+  if (ordersFilter==='closed') rows = orders.filter(o=>!isOpen(o));
+
+  const tbody = document.querySelector('#ordersTable tbody');
+  if (!rows.length){
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Нет ордеров в этой категории</td></tr>`;
+  } else {
+    tbody.innerHTML = rows.map(o=>`
+      <tr>
+        <td>${timeStr(o.created)}</td>
+        <td>${o.index==null?'—':'#'+o.index}</td>
+        <td class="${o.side}">${o.side_display}</td>
+        <td>${fmt(o.price)}</td>
+        <td>${fmt(o.size,6)}</td>
+        <td>${fmt(o.filled,6)}</td>
+        <td><span class="st ${stClass(o.state)}">${o.state_display}</span></td>
+        <td class="muted">${o.ord_id||'—'}</td>
+      </tr>`).join('');
+  }
+  const open = orders.filter(isOpen).length, closed = orders.length-open;
+  document.getElementById('ordersCount').textContent =
+    `всего ${orders.length} · открытых ${open} · закрытых ${closed}`;
+}
+
+document.querySelectorAll('.flt').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.flt').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  ordersFilter = b.dataset.f;
+  renderOrders(lastOrders);
+});
+
+async function load(){
+  const bar = document.getElementById('bar').value;
+  try {
+    const res = await fetch(`/dashboard/${PK}/data.json?bar=${bar}`);
+    const d = await res.json();
+    renderCards(d); priceChart(d); pnlChart(d); renderOrders(d.orders||[]);
+    document.getElementById('updated').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
+  } catch(e){ console.error(e); }
+}
+
+// Самопланирующийся цикл: следующий запрос только после завершения предыдущего,
+// чтобы при 1-секундном интервале фетчи не накладывались друг на друга.
+async function loop(){
+  await load();
+  _timer = setTimeout(loop, REFRESH_MS);
+}
+function restart(){ clearTimeout(_timer); loop(); }
+
+document.getElementById('refresh').onclick = restart;
+document.getElementById('bar').onchange = restart;
+loop();
+</script>
+</body>
+</html>
