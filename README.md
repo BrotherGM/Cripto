@@ -22,32 +22,48 @@ grid/
 
 ## Запуск в Docker (для сервера)
 
-Нужны только Docker и Docker Compose. PostgreSQL поднимается контейнером.
+В Docker поднимается **только приложение** (Django/gunicorn). **PostgreSQL уже
+установлен на сервере** — контейнер подключается к нему по `host.docker.internal`.
+Внешний порт приложения — **8077**.
 
+**Подготовка PostgreSQL на сервере** (один раз):
+```bash
+sudo -u postgres createdb Cripto                 # создать БД (если ещё нет)
+# разрешить контейнеру подключаться к Postgres хоста:
+#  1) postgresql.conf:  listen_addresses = '*'   (или адрес docker-моста)
+#  2) pg_hba.conf:      host  all  all  172.16.0.0/12  scram-sha-256
+sudo systemctl restart postgresql
+```
+
+**Запуск приложения:**
 ```bash
 git clone git@github.com:BrotherGM/Cripto.git
 cd Cripto
 
-# настройки окружения
 cp .env.example .env
-nano .env        # впишите ключи OKX (демо: OKX_FLAG=1) и при желании пароль БД
+nano .env        # ключи OKX (демо: OKX_FLAG=1) + DB_NAME/DB_USER/DB_PASSWORD вашего Postgres
+                 # DB_HOST оставьте host.docker.internal
 
-# сборка и запуск (Django + PostgreSQL)
 docker compose up -d --build
 ```
 
 При старте контейнер автоматически: ждёт БД → применяет миграции → собирает статику →
 создаёт суперпользователя (из `DJANGO_SUPERUSER_*` в `.env`).
 
-- Админка: `http://<сервер>:8000/admin/`
-- Дашборд с графиками: `http://<сервер>:8000/dashboard/`
+- Админка: `http://<сервер>:8077/admin/`
+- Дашборд с графиками: `http://<сервер>:8077/dashboard/`
 
 Полезное:
 ```bash
 docker compose logs -f web        # логи приложения
 docker compose exec web python manage.py createsuperuser   # ещё один админ
-docker compose down               # остановить (данные БД сохранятся в volume pgdata)
+docker compose down               # остановить приложение (БД на сервере не трогается)
 ```
+
+> Если `host.docker.internal` не резолвится (старый Docker на Linux) — альтернатива:
+> добавить в сервис `web` строку `network_mode: "host"` (тогда `DB_HOST=localhost`,
+> а порт публикуется самим gunicorn). Для большинства серверов достаточно варианта
+> с `host.docker.internal` выше.
 
 > Запуск/остановка торговли — кнопками в админке. Фоновый рабочий цикл стартует
 > внутри web-контейнера; его логи — в `/app/logs/run_grid_<id>.log` контейнера.
