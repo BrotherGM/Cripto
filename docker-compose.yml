@@ -5,6 +5,9 @@ services:
     env_file: .env
     # PostgreSQL установлен на самом сервере (вне Docker).
     # Контейнер обращается к нему по адресу host.docker.internal -> хост.
+    # DB_HOST переопределяем тут (в .env localhost — для запуска без Docker).
+    environment:
+      DB_HOST: host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

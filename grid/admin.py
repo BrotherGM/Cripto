@@ -49,7 +49,6 @@ class StrategyLogInline(admin.TabularInline):
 
 @admin.register(GridStrategy)
 class GridStrategyAdmin(admin.ModelAdmin):
-    change_form_template = "admin/grid/gridstrategy/change_form.html"
     list_display = (
         "name", "inst_id", "status_badge", "runner_badge", "grid_type", "levels",
         "p_min", "p_max", "order_size", "open_chart",
@@ -58,11 +57,14 @@ class GridStrategyAdmin(admin.ModelAdmin):
     search_fields = ("name", "inst_id")
     inlines = [PositionInline, GridLevelInline, StrategyLogInline]
     readonly_fields = (
+        "trading_controls",
         "tick_sz", "lot_sz", "min_sz", "is_demo",
         "runner_pid", "runner_started_at", "created_at", "updated_at",
     )
     fieldsets = (
-        ("Основное", {"fields": ("name", "inst_id", "inst_type", "td_mode", "status")}),
+        ("Основное", {
+            "fields": ("name", "inst_id", "inst_type", "td_mode", "status", "trading_controls"),
+        }),
         ("Диапазон сетки (раздел 2.1)", {
             "fields": ("p_max", "p_min", "levels", "grid_type", "order_size"),
         }),
@@ -98,6 +100,28 @@ class GridStrategyAdmin(admin.ModelAdmin):
     @admin.display(description="Графики")
     def open_chart(self, obj):
         return format_html('<a href="/dashboard/{}/" target="_blank">📈 открыть</a>', obj.id)
+
+    @admin.display(description="Управление торговлей")
+    def trading_controls(self, obj):
+        """Кнопки запуска/остановки торговли и ссылка на графики.
+
+        Кнопки — submit'ы той же формы; их обрабатывает response_change().
+        """
+        if not obj or not obj.pk:
+            return "Сохраните стратегию, чтобы управлять торговлей."
+        return format_html(
+            '<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">'
+            '<input type="submit" name="_start_trading" value="▶️ Запустить торговлю" '
+            'style="background:#1f7a3d; color:#fff; padding:6px 12px; border:0; '
+            'border-radius:6px; cursor:pointer;">'
+            '<input type="submit" name="_stop_trading" value="⏹ Остановить торговлю" '
+            'style="background:#a33; color:#fff; padding:6px 12px; border:0; '
+            'border-radius:6px; cursor:pointer;">'
+            '<a class="button" href="/dashboard/{}/" target="_blank" '
+            'style="background:#264b7a; color:#fff;">📈 Открыть графики</a>'
+            '</div>',
+            obj.pk,
+        )
 
     # --- кнопки запуска/остановки на странице объекта ------------------------
     def response_change(self, request, obj):

@@ -8,7 +8,7 @@
     * штатная остановка (cancel-batch) и аварийный стоп-лосс         — раздел 4
 """
 import uuid
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN
 
 from django.db import transaction
 from django.utils import timezone
@@ -158,33 +158,55 @@ class GridEngine:
         return placed
 
     # --- 3.2 реакция на исполнение -------------------------------------------
-    @transaction.atomic
     def on_fill(self, order: GridOrder, fill_price: Decimal, fill_size: Decimal,
                 trade_id: str = "", ts=None, fee=Decimal("0"), fee_ccy=""):
-        """Обрабатывает исполнение ордера: пишет сделку, VWAP и парный ордер."""
-        fill_price, fill_size = Decimal(fill_price), Decimal(fill_size)
+        """Обрабатывает исполнение ордера: пишет сделку, VWAP и парный ордер.
+
+        Запись сделки/VWAP — в одной транзакции (атомарно). Размещение парного
+        ордера (сетевой вызов OKX) выполняется ПОСЛЕ коммита: иначе сбой биржи
+        откатил бы уже состоявшуюся на бирже сделку и привёл к её повторной
+        обработке (дубль Trade и двойной VWAP).
+        """
+        level_to_pair = self._record_fill(
+            order, Decimal(fill_price), Decimal(fill_size),
+            trade_id, ts, Decimal(fee or 0), fee_ccy,
+        )
+        if level_to_pair is not None:
+            self._place_paired_order(level_to_pair)
+
+    @transaction.atomic
+    def _record_fill(self, order, fill_price, fill_size, trade_id, ts, fee, fee_ccy):
+        """Атомарно фиксирует сделку, обновляет ордер и VWAP.
+
+        Возвращает уровень для парного ордера (если ордер исполнен полностью), иначе None.
+        """
         Trade.objects.create(
             strategy=self.s, order=order, trade_id=trade_id, side=order.side,
-            fill_price=fill_price, fill_size=fill_size, fee=Decimal(fee or 0),
+            fill_price=fill_price, fill_size=fill_size, fee=fee,
             fee_ccy=fee_ccy, ts=ts or timezone.now(),
         )
-        order.filled_size = (order.filled_size or Decimal("0")) + fill_size
-        order.avg_px = fill_price
-        order.state = (OrderState.FILLED if order.filled_size >= order.size
+        old_filled = order.filled_size or Decimal("0")
+        new_filled = old_filled + fill_size
+        # средневзвешенная цена исполнения ордера (по всем филлам)
+        order.avg_px = (((order.avg_px or Decimal("0")) * old_filled + fill_price * fill_size)
+                        / new_filled) if new_filled > 0 else fill_price
+        order.filled_size = new_filled
+        order.state = (OrderState.FILLED if new_filled >= order.size
                        else OrderState.PARTIALLY_FILLED)
         order.save(update_fields=["filled_size", "avg_px", "state"])
 
         self._update_vwap(order.side, fill_price, fill_size)
 
         if order.state != OrderState.FILLED:
-            return  # ждём полного исполнения, пара ставится один раз
+            return None  # ждём полного исполнения, пара ставится один раз
 
         level = order.level
-        if level:
-            level.status = LevelStatus.FILLED
-            level.active_order = None
-            level.save(update_fields=["status", "active_order"])
-            self._place_paired_order(level)
+        if not level:
+            return None
+        level.status = LevelStatus.FILLED
+        level.active_order = None
+        level.save(update_fields=["status", "active_order"])
+        return level
 
     def _place_paired_order(self, filled_level: GridLevel):
         """buy@i -> sell@i+1 (выше); sell@i -> buy@i-1 (ниже)."""
@@ -205,7 +227,10 @@ class GridEngine:
         target.side = new_side
         target.status = LevelStatus.FREE
         target.save(update_fields=["side", "status"])
-        self._place_order_for_level(target)
+        try:
+            self._place_order_for_level(target)
+        except okx.OkxError:
+            return  # ошибка уже залогирована; сделка зафиксирована, цикл продолжается
         self.log(f"Пара: {filled_level.side}@{filled_level.index} -> "
                  f"{new_side}@{target_index} ({target.price}).")
 
@@ -217,8 +242,12 @@ class GridEngine:
             if new_qty > 0:
                 pos.avg_price = (pos.avg_price * pos.base_qty + price * size) / new_qty
             pos.base_qty = new_qty
-        else:  # продажа: фиксируем прибыль относительно средней цены
-            pos.realized_pnl += (price - pos.avg_price) * size
+        else:
+            # Прибыль фиксируем только на объём, закрывающий накопленную позицию.
+            # Продажа сверх позиции (или при нулевой базе) прибыль НЕ фабрикует.
+            closing = min(size, pos.base_qty) if pos.base_qty > 0 else Decimal("0")
+            if closing > 0 and pos.avg_price > 0:
+                pos.realized_pnl += (price - pos.avg_price) * closing
             pos.base_qty -= size
             if pos.base_qty <= 0:
                 pos.base_qty = Decimal("0")

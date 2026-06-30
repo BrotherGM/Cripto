@@ -5,11 +5,12 @@
     /dashboard/<id>/            — графики по стратегии (свечи+сетка, PnL)
     /dashboard/<id>/data.json   — данные для графиков (для авто-обновления)
 """
+import time
 from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse, Http404
+from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
 
 from grid.models import GridStrategy, Side
@@ -20,12 +21,24 @@ def _f(value) -> float:
     return float(value) if value is not None else None
 
 
+# Кэш свечей: при обновлении дашборда раз в секунду незачем тянуть 200 свечей
+# с биржи каждый раз — свечи меняются медленнее таймфрейма. Цена (last) берётся
+# «вживую» отдельно, поэтому кэш свечей не влияет на актуальность графика цены.
+_CANDLE_CACHE: dict = {}
+_CANDLE_TTL = 8.0  # секунд
+
+
 def _candles(inst_id: str, bar: str = "1H", limit: int = 200) -> list[dict]:
-    """Свечи с биржи (от старых к новым). При ошибке — пустой список."""
+    """Свечи с биржи (от старых к новым), с кэшем TTL. При ошибке — пустой список."""
+    key = (inst_id, bar, limit)
+    cached = _CANDLE_CACHE.get(key)
+    now = time.time()
+    if cached and now - cached[0] < _CANDLE_TTL:
+        return cached[1]
     try:
         rows = okx.unwrap(okx.market_api().get_candlesticks(inst_id, bar=bar, limit=str(limit)))
     except Exception:  # noqa: BLE001 — график должен рендериться и без биржи
-        return []
+        return cached[1] if cached else []  # при сбое отдаём прошлый кэш
     out = []
     for r in reversed(rows):  # OKX отдаёт новейшие первыми
         ts = datetime.fromtimestamp(int(r[0]) / 1000, tz=dt_timezone.utc)
@@ -33,6 +46,7 @@ def _candles(inst_id: str, bar: str = "1H", limit: int = 200) -> list[dict]:
             "t": ts.isoformat(),
             "o": float(r[1]), "h": float(r[2]), "l": float(r[3]), "c": float(r[4]),
         })
+    _CANDLE_CACHE[key] = (now, out)
     return out
 
 
@@ -49,7 +63,9 @@ def _pnl_series(strategy: GridStrategy) -> list[dict]:
                 avg = (avg * base + t.fill_price * t.fill_size) / new_base
             base = new_base
         else:
-            pnl += (t.fill_price - avg) * t.fill_size
+            closing = min(t.fill_size, base) if base > 0 else Decimal("0")
+            if closing > 0 and avg > 0:
+                pnl += (t.fill_price - avg) * closing
             base -= t.fill_size
             if base <= 0:
                 base = Decimal("0")
