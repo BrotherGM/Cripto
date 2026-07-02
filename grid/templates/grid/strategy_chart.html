@@ -212,15 +212,21 @@ async function load(){
     const res = await fetch(`/dashboard/${PK}/data.json?bar=${bar}`);
     const d = await res.json();
     renderCards(d); priceChart(d); pnlChart(d); renderOrders(d.orders||[]);
-    document.getElementById('updated').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
-  } catch(e){ console.error(e); }
+    const running = !!(d.strategy && d.strategy.running);
+    const stamp = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
+    document.getElementById('updated').textContent =
+      running ? stamp : stamp + ' · авто-обновление на паузе (торговля не запущена)';
+    return running;
+  } catch(e){ console.error(e); return false; }
 }
 
-// Самопланирующийся цикл: следующий запрос только после завершения предыдущего,
-// чтобы при 1-секундном интервале фетчи не накладывались друг на друга.
+// Самопланирующийся цикл: следующий запрос — только после завершения предыдущего.
+// Обновляем раз в секунду ТОЛЬКО пока стратегия запущена. Если торговля
+// остановлена — опрос прекращается (кнопка «↻ Обновить» возобновит).
 async function loop(){
-  await load();
-  _timer = setTimeout(loop, REFRESH_MS);
+  const running = await load();
+  clearTimeout(_timer);
+  if (running) _timer = setTimeout(loop, REFRESH_MS);
 }
 function restart(){ clearTimeout(_timer); loop(); }
 

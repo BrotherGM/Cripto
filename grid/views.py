@@ -13,7 +13,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
 
-from grid.models import GridStrategy, Side
+from grid.models import GridStrategy, Side, StrategyStatus
 from grid.services import okx_client as okx
 
 
@@ -111,6 +111,7 @@ def build_chart_data(strategy: GridStrategy, bar: str = "1H") -> dict:
             "name": strategy.name,
             "inst_id": strategy.inst_id,
             "status": strategy.get_status_display(),
+            "running": strategy.status == StrategyStatus.RUNNING,
             "p_min": _f(strategy.p_min),
             "p_max": _f(strategy.p_max),
             "stop_loss": _f(strategy.effective_stop_loss),
