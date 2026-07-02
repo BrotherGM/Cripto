@@ -1,0 +1,8 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li>
+    <a href="quick-create/" class="addlink">➕ Быстрое создание по паре</a>
+  </li>
+  {{ block.super }}
+{% endblock %}

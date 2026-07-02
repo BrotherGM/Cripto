@@ -1,0 +1,37 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{% url 'admin:grid_gridstrategy_changelist' %}">Стратегии</a>
+  &rsaquo; Быстрое создание по паре
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <p style="max-width:680px">
+    Укажите пары — для каждой создастся стратегия с автоматическим заполнением полей:
+    параметры инструмента (tickSz / lotSz / minSz) подтянутся с биржи, диапазон
+    <b>Pmax/Pmin</b> рассчитается от текущей цены (± %), <b>объём ордера</b> — из целевого
+    размера в USDT, <b>уровни сетки</b> рассчитаются автоматически (статус «Готова»).
+  </p>
+
+  <form method="post">{% csrf_token %}
+    <fieldset class="module aligned">
+      {% for field in form %}
+        <div class="form-row">
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+          {% for e in field.errors %}<p class="errornote">{{ e }}</p>{% endfor %}
+        </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="Создать стратегии" class="default">
+      <a href="{% url 'admin:grid_gridstrategy_changelist' %}" class="closelink">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

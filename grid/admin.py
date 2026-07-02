@@ -9,13 +9,17 @@
 """
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
+from django.shortcuts import redirect, render
+from django.urls import path
 from django.utils.html import format_html
 
+from grid.forms import QuickStrategyForm
 from grid.models import (
     GridStrategy, GridLevel, GridOrder, Trade, Position, StrategyLog,
 )
 from grid.services import okx_client as okx
 from grid.services import runner
+from grid.services.builder import create_strategy_for_pair
 from grid.services.grid_engine import GridEngine
 
 
@@ -49,6 +53,7 @@ class StrategyLogInline(admin.TabularInline):
 
 @admin.register(GridStrategy)
 class GridStrategyAdmin(admin.ModelAdmin):
+    change_list_template = "admin/grid/gridstrategy/change_list.html"
     list_display = (
         "name", "inst_id", "status_badge", "runner_badge", "grid_type", "levels",
         "p_min", "p_max", "order_size", "open_chart",
@@ -142,6 +147,53 @@ class GridStrategyAdmin(admin.ModelAdmin):
             )
         except Exception as e:  # noqa: BLE001
             self.message_user(request, f"Ошибка: {e}", messages.ERROR)
+
+    # --- быстрое создание стратегии по паре ----------------------------------
+    def get_urls(self):
+        custom = [
+            path("quick-create/", self.admin_site.admin_view(self.quick_create_view),
+                 name="grid_gridstrategy_quick_create"),
+        ]
+        return custom + super().get_urls()
+
+    def quick_create_view(self, request):
+        """Форма: задаёшь пары -> создаются стратегии с авто-заполнением полей."""
+        if request.method == "POST":
+            form = QuickStrategyForm(request.POST)
+            if form.is_valid():
+                cd = form.cleaned_data
+                raw = cd["pairs"].replace(",", "\n").splitlines()
+                pairs = [p.strip() for p in raw if p.strip()]
+                created = 0
+                for pair in pairs:
+                    try:
+                        res = create_strategy_for_pair(
+                            pair, range_pct=cd["range_pct"], levels=cd["levels"],
+                            order_notional=cd["order_notional"], grid_type=cd["grid_type"],
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        self.message_user(request, f"{pair}: ошибка — {e}", messages.ERROR)
+                        continue
+                    self.message_user(
+                        request, res["msg"],
+                        messages.SUCCESS if res["ok"] else messages.WARNING,
+                    )
+                    if res["ok"]:
+                        created += 1
+                        if cd.get("start"):
+                            self._do(request, res["strategy"], runner.start_trading)
+                if created:
+                    return redirect("admin:grid_gridstrategy_changelist")
+        else:
+            form = QuickStrategyForm()
+
+        ctx = {
+            **self.admin_site.each_context(request),
+            "title": "Быстрое создание стратегии по паре",
+            "opts": self.model._meta,
+            "form": form,
+        }
+        return render(request, "admin/grid/quick_create.html", ctx)
 
     # --- массовые действия запуска/остановки --------------------------------
     @admin.action(description="▶️ Запустить торговлю")
