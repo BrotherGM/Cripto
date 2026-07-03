@@ -24,6 +24,7 @@ services:
     network_mode: "host"
     environment:
       DB_HOST: localhost
+      APP_ROLE: worker      # не собирает статику/суперюзера; миграции — под общим advisory-lock
     command: python manage.py run_bots --interval 5 --reconcile-every 12
     restart: unless-stopped
     depends_on:

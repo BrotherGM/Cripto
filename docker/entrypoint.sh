@@ -15,19 +15,24 @@ else:
     raise SystemExit("База данных недоступна — выход")
 PY
 
-echo "→ Применение миграций…"
-python manage.py migrate --noinput
+# Проверка и накат нужных миграций — под advisory-lock, чтобы web и worker,
+# стартуя одновременно, не конфликтовали (см. manage.py migrate_safe).
+echo "→ Проверка и применение миграций…"
+python manage.py migrate_safe
 
-echo "→ Сбор статики…"
-python manage.py collectstatic --noinput
+# Сбор статики и суперпользователь — только на web (APP_ROLE!=worker),
+# чтобы воркер не гонялся за те же файлы/записи.
+if [ "${APP_ROLE:-web}" != "worker" ]; then
+  echo "→ Сбор статики…"
+  python manage.py collectstatic --noinput
 
-# Автосоздание суперпользователя (если заданы переменные окружения)
-if [ -n "$DJANGO_SUPERUSER_USERNAME" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
-  echo "→ Создание суперпользователя ${DJANGO_SUPERUSER_USERNAME} (если не существует)…"
-  python manage.py createsuperuser --noinput \
-    --username "$DJANGO_SUPERUSER_USERNAME" \
-    --email "${DJANGO_SUPERUSER_EMAIL:-admin@example.com}" 2>/dev/null \
-    && echo "  создан" || echo "  уже существует"
+  if [ -n "$DJANGO_SUPERUSER_USERNAME" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
+    echo "→ Создание суперпользователя ${DJANGO_SUPERUSER_USERNAME} (если не существует)…"
+    python manage.py createsuperuser --noinput \
+      --username "$DJANGO_SUPERUSER_USERNAME" \
+      --email "${DJANGO_SUPERUSER_EMAIL:-admin@example.com}" 2>/dev/null \
+      && echo "  создан" || echo "  уже существует"
+  fi
 fi
 
 echo "→ Запуск: $*"
