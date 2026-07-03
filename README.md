@@ -36,7 +36,7 @@ grid/
 sudo -u postgres createdb Cripto      # создать пустую БД (таблицы создаст миграция)
 ```
 
-**Запуск приложения:**
+**Запуск одной командой (рекомендуется):**
 ```bash
 git clone git@github.com:BrotherGM/Cripto.git
 cd Cripto
@@ -45,6 +45,13 @@ cp .env.example .env
 nano .env        # ключи OKX (демо: OKX_FLAG=1) + DB_USER/DB_PASSWORD вашего Postgres
                  # DB_HOST=localhost, DB_NAME=Cripto
 
+./run.sh         # проверит Docker/.env, создаст БД (если psql есть), соберёт и поднимет web+worker
+```
+`run.sh` идемпотентен — повторный запуск пересобирает и перезапускает. Для обновления:
+`git pull && ./run.sh`.
+
+**Или вручную:**
+```bash
 docker compose up -d --build
 ```
 
