@@ -151,3 +151,21 @@ def cancel_batch_orders(orders: list[dict]) -> list:
 def get_order(inst_id: str, ord_id: str = "", cl_ord_id: str = "") -> dict:
     data = unwrap(trade_api().get_order(instId=inst_id, ordId=ord_id, clOrdId=cl_ord_id))
     return data[0] if data else {}
+
+
+def set_leverage(inst_id: str, lever, mgn_mode: str, pos_side: str = "") -> dict:
+    """Устанавливает плечо для инструмента (перед торговлей на марже).
+
+    mgn_mode: 'isolated' | 'cross'. Для 'cash' (спот) плечо не применяется.
+    """
+    kwargs = dict(instId=inst_id, lever=str(lever), mgnMode=mgn_mode)
+    if pos_side:
+        kwargs["posSide"] = pos_side
+    data = unwrap(account_api().set_leverage(**kwargs))
+    return data[0] if data else {}
+
+
+def get_positions(inst_type: str = "") -> list:
+    """Открытые позиции аккаунта (для контроля маржи/близости к ликвидации)."""
+    return unwrap(account_api().get_positions(instType=inst_type) if inst_type
+                  else account_api().get_positions())

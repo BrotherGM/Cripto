@@ -4,5 +4,21 @@
   <li>
     <a href="quick-create/" class="addlink">🧙 Мастер создания стратегии</a>
   </li>
+  <li>
+    <a href="export-xlsx/{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">📥 Экспорт в Excel</a>
+  </li>
+  {{ block.super }}
+{% endblock %}
+
+{% block result_list %}
+  {% if earnings_total is not None %}
+  <div style="margin:6px 0 12px; padding:10px 14px; background:#eef3f8;
+              border:1px solid #cfd9e3; border-radius:8px; font-size:14px;">
+    Суммарный заработок по текущему отбору
+    (стратегий: <b>{{ earnings_count }}</b>):
+    <b style="{% if earnings_total > 0 %}color:#0a0{% elif earnings_total < 0 %}color:#c00{% else %}color:#555{% endif %}; font-size:15px;">
+      {% if earnings_total > 0 %}+{% endif %}{{ earnings_total|floatformat:2 }} USDT</b>
+  </div>
+  {% endif %}
   {{ block.super }}
 {% endblock %}

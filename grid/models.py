@@ -33,6 +33,12 @@ class TradingMode(models.TextChoices):
     LIVE = "live", "Реал"
 
 
+class MarginMode(models.TextChoices):
+    CASH = "cash", "Наличный / спот (cash)"
+    ISOLATED = "isolated", "Изолированная маржа (isolated)"
+    CROSS = "cross", "Кросс-маржа (cross)"
+
+
 class GridType(models.TextChoices):
     ARITHMETIC = "arithmetic", "Арифметическая (равномерная)"
     GEOMETRIC = "geometric", "Геометрическая (логарифмическая)"
@@ -44,6 +50,7 @@ class StrategyStatus(models.TextChoices):
     RUNNING = "running", "Запущена"
     STOPPED = "stopped", "Остановлена"
     EMERGENCY = "emergency", "Аварийный выход (stop-loss)"
+    ARCHIVED = "archived", "Архив"
 
 
 class Side(models.TextChoices):
@@ -86,7 +93,14 @@ class GridStrategy(models.Model):
         help_text="demo — тестовая торговля; live — реальная (боевые ключи).")
     inst_id = models.CharField("Инструмент (instId)", max_length=40, default="BTC-USDT")
     inst_type = models.CharField("Тип инструмента", max_length=10, default="SPOT")
-    td_mode = models.CharField("Режим торговли (tdMode)", max_length=10, default="cash")
+    td_mode = models.CharField(
+        "Режим маржи (tdMode)", max_length=10, choices=MarginMode.choices,
+        default=MarginMode.CASH,
+        help_text="cash — спот без плеча; isolated/cross — маржа с плечом (для деривативов).")
+    leverage = models.PositiveIntegerField(
+        "Плечо", default=1,
+        help_text="1 = без плеча (спот). Действует только с маржой (isolated/cross). "
+                  "С плечом ×N риск и экспозиция в N раз больше маржи, появляется ликвидация.")
 
     # Параметры стратегий, кроме сетки (DCA/Trend/Arbitrage/Scalping) — в JSON.
     params = models.JSONField("Параметры стратегии", default=dict, blank=True)

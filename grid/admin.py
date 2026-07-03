@@ -8,13 +8,15 @@
     * штатная остановка (отмена всех ордеров)
 """
 from django.contrib import admin, messages
+from django.db.models import Sum
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
 import json
 import os
+from decimal import Decimal
 from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
@@ -24,6 +26,7 @@ from grid.forms import QuickStrategyForm
 from grid.models import (
     GridStrategy, GridLevel, GridOrder, Trade, Position, StrategyLog, Instrument,
     Document, Service, RiskSettings, EquitySnapshot, GridType, StrategyType,
+    StrategyStatus,
 )
 from grid.services import okx_client as okx
 from grid.services import risk
@@ -65,12 +68,77 @@ class StrategyLogInline(admin.TabularInline):
     max_num = 0  # только просмотр (добавление через инлайн запрещено)
 
 
+def _strategies_to_xlsx(queryset):
+    """Выгрузка стратегий в Excel (.xlsx) + итоговая сумма заработка. То же, что в торгах."""
+    from django.http import HttpResponse
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return HttpResponse("Экспорт недоступен: не установлен openpyxl "
+                            "(добавьте в requirements и пересоберите).", status=500)
+    import io
+
+    qs = queryset.select_related("position")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Стратегии"
+    headers = ["Название", "Тип", "Режим", "Инструмент", "Статус", "Pmin", "Pmax",
+               "Уровней", "Объём ордера", "Заработок, USDT", "Желаемое", "Последний тик"]
+    ws.append(headers)
+    fill = PatternFill("solid", fgColor="1A5276")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = fill
+        c.alignment = Alignment(horizontal="center")
+
+    total = 0.0
+    for s in qs:
+        try:
+            pnl = float(s.position.realized_pnl)
+        except Position.DoesNotExist:
+            pnl = 0.0
+        total += pnl
+        ws.append([
+            s.name, s.get_strategy_type_display(), s.get_mode_display(), s.inst_id,
+            s.get_status_display(),
+            float(s.p_min) if s.p_min is not None else None,
+            float(s.p_max) if s.p_max is not None else None,
+            s.levels,
+            float(s.order_size) if s.order_size is not None else None,
+            round(pnl, 4),
+            s.get_desired_state_display(),
+            s.last_tick_at.strftime("%Y-%m-%d %H:%M:%S") if s.last_tick_at else "",
+        ])
+
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "", "", "Σ Заработок, USDT", round(total, 4)])
+    ws.cell(row=ws.max_row, column=9).font = Font(bold=True)
+    ws.cell(row=ws.max_row, column=10).font = Font(
+        bold=True, color="1E7E45" if total >= 0 else "C0392B")
+
+    widths = [26, 20, 8, 14, 16, 12, 12, 9, 14, 16, 12, 20]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fname = "strategies_" + datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S") + ".xlsx"
+    resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return resp
+
+
 @admin.register(GridStrategy)
 class GridStrategyAdmin(admin.ModelAdmin):
     change_list_template = "admin/grid/gridstrategy/change_list.html"
     list_display = (
         "name", "type_badge", "mode_badge", "inst_id", "status_badge", "runner_badge",
-        "order_size", "open_chart",
+        "earnings_badge", "order_size", "open_chart",
     )
     list_filter = ("mode", "strategy_type", "status", "inst_type")
     search_fields = ("name", "inst_id")
@@ -83,8 +151,8 @@ class GridStrategyAdmin(admin.ModelAdmin):
     )
     fieldsets = (
         ("Основное", {
-            "fields": ("name", "strategy_type", "mode", "inst_id", "inst_type", "td_mode",
-                       "status", "risk_check", "trading_controls"),
+            "fields": ("name", "strategy_type", "mode", "inst_id", "inst_type",
+                       "td_mode", "leverage", "status", "risk_check", "trading_controls"),
         }),
         ("Параметры стратегии (DCA / Trend / Scalping / Arbitrage)", {
             "fields": ("params", "params_help"),
@@ -108,9 +176,32 @@ class GridStrategyAdmin(admin.ModelAdmin):
     )
     actions = (
         "action_start_trading", "action_stop_trading", "action_stop_all",
+        "action_archive", "action_unarchive", "action_export_xlsx",
         "action_reconcile", "action_check_connection",
         "action_sync_instrument", "action_build_levels",
     )
+
+    @admin.action(description="📥 Экспорт в Excel (выбранные)")
+    def action_export_xlsx(self, request, queryset):
+        return _strategies_to_xlsx(queryset)
+
+    @admin.action(description="🗄 В архив (остановить и скрыть из работы)")
+    def action_archive(self, request, queryset):
+        n = 0
+        for s in queryset.exclude(status=StrategyStatus.ARCHIVED):
+            if s.status == StrategyStatus.RUNNING or runner.is_running(s):
+                runner.stop_trading(s)  # desired=stop + отмена ордеров
+            GridStrategy.objects.filter(pk=s.pk).update(
+                status=StrategyStatus.ARCHIVED, desired_state="stop")
+            n += 1
+        self.message_user(request, f"В архив отправлено стратегий: {n}.", messages.SUCCESS)
+
+    @admin.action(description="♻️ Вернуть из архива")
+    def action_unarchive(self, request, queryset):
+        n = queryset.filter(status=StrategyStatus.ARCHIVED).update(
+            status=StrategyStatus.STOPPED)
+        self.message_user(request, f"Возвращено из архива (в «Остановлена»): {n}.",
+                          messages.SUCCESS)
 
     @admin.action(description="🛑 Остановить ВСЕ стратегии (kill-switch)")
     def action_stop_all(self, request, queryset):
@@ -131,20 +222,23 @@ class GridStrategyAdmin(admin.ModelAdmin):
         except Exception as e:  # noqa: BLE001
             self.message_user(request, f"Ошибка сверки: {e}", messages.ERROR)
 
-    @admin.display(description="Проверка риска (комиссия)")
+    @admin.display(description="Проверка риска (комиссия / плечо)")
     def risk_check(self, obj):
         if not obj or not obj.pk:
             return "—"
-        warnings = risk.fee_step_warnings(obj)
+        warnings = risk.fee_step_warnings(obj) + risk.leverage_warnings(obj)
         if not warnings:
-            return format_html('<span style="color:#0a0">✓ шаг прибыли выше комиссии</span>')
-        return format_html('<b style="color:#c00">⚠ {}</b>', " ".join(warnings))
+            return format_html('<span style="color:#0a0">✓ шаг прибыли выше комиссии, '
+                               'плечо/маржа в норме</span>')
+        return format_html(
+            '<b style="color:#c00">⚠</b> {}',
+            format_html_join(format_html("<br>"), "• {}", ((w,) for w in warnings)))
 
     @admin.display(description="Статус")
     def status_badge(self, obj):
         colors = {
             "draft": "#888", "ready": "#0a7", "running": "#0a0",
-            "stopped": "#c80", "emergency": "#c00",
+            "stopped": "#c80", "emergency": "#c00", "archived": "#6c7a89",
         }
         return format_html(
             '<b style="color:{}">{}</b>', colors.get(obj.status, "#000"),
@@ -200,6 +294,36 @@ class GridStrategyAdmin(admin.ModelAdmin):
     @admin.display(description="Графики")
     def open_chart(self, obj):
         return format_html('<a href="/dashboard/{}/" target="_blank">📈 открыть</a>', obj.id)
+
+    def get_queryset(self, request):
+        # select_related по позиции — чтобы колонка «Заработок» не плодила запросы.
+        return super().get_queryset(request).select_related("position")
+
+    def changelist_view(self, request, extra_context=None):
+        """Добавляет над таблицей суммарный заработок по текущему отбору (фильтры/поиск)."""
+        response = super().changelist_view(request, extra_context)
+        try:
+            cl = response.context_data["cl"]
+        except (AttributeError, KeyError, TypeError):
+            return response  # редирект/не-табличный ответ
+        qs = cl.queryset  # уже с применёнными фильтрами и поиском
+        total = qs.aggregate(t=Sum("position__realized_pnl"))["t"] or Decimal("0")
+        response.context_data["earnings_total"] = total
+        response.context_data["earnings_count"] = qs.count()
+        return response
+
+    @admin.display(description="Заработок", ordering="position__realized_pnl")
+    def earnings_badge(self, obj):
+        """Реализованная прибыль стратегии на текущий момент (VWAP), в котируемой валюте."""
+        try:
+            pnl = obj.position.realized_pnl
+        except Position.DoesNotExist:
+            pnl = None
+        if pnl is None:
+            return format_html('<span style="color:#999" title="сделок ещё не было">—</span>')
+        color = "#0a0" if pnl > 0 else ("#c00" if pnl < 0 else "#888")
+        sign = "+" if pnl > 0 else ""
+        return format_html('<b style="color:{}">{}{} USDT</b>', color, sign, f"{pnl:.2f}")
 
     # Схемы параметров (params) по типам стратегий — подсказка в форме
     PARAM_SCHEMAS = {
@@ -325,8 +449,19 @@ class GridStrategyAdmin(admin.ModelAdmin):
         custom = [
             path("quick-create/", self.admin_site.admin_view(self.quick_create_view),
                  name="grid_gridstrategy_quick_create"),
+            path("export-xlsx/", self.admin_site.admin_view(self.export_xlsx_view),
+                 name="grid_gridstrategy_export_xlsx"),
         ]
         return custom + super().get_urls()
+
+    def export_xlsx_view(self, request):
+        """Экспорт в Excel текущего отфильтрованного вида списка стратегий."""
+        try:
+            cl = self.get_changelist_instance(request)
+            qs = cl.get_queryset(request)
+        except Exception:  # noqa: BLE001 — при кривых параметрах отдаём всё
+            qs = self.get_queryset(request)
+        return _strategies_to_xlsx(qs)
 
     def quick_create_view(self, request):
         """Мастер: выбираешь тип и пары -> стратегии создаются с авто-заполнением."""

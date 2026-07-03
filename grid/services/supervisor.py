@@ -18,10 +18,17 @@ from grid.services.engines import get_engine
 
 _ACTIVE = [OrderState.LIVE, OrderState.PARTIALLY_FILLED]
 _RESUMABLE = [StrategyStatus.DRAFT, StrategyStatus.READY, StrategyStatus.STOPPED]
+_MARGIN_MODES = ("isolated", "cross")
 
 
 def _touch(pk, **fields):
     GridStrategy.objects.filter(pk=pk).update(**fields)
+
+
+def _apply_margin(s):
+    """Перед стартом на марже выставляет плечо инструмента (для деривативов)."""
+    if s.td_mode in _MARGIN_MODES and (s.leverage or 1) > 1:
+        okx.set_leverage(s.inst_id, s.leverage, s.td_mode)
 
 
 def tick_strategy(s: GridStrategy):
@@ -38,6 +45,7 @@ def tick_strategy(s: GridStrategy):
                     if s.status != StrategyStatus.RUNNING:  # стратегия сама завершилась
                         _touch(s.pk, desired_state="stop")
             elif s.status in _RESUMABLE:
+                _apply_margin(s)                         # плечо для маржи (деривативы)
                 get_engine(s).start()                    # setup + размещение, статус -> running
             elif s.status == StrategyStatus.EMERGENCY:
                 _touch(s.pk, desired_state="stop")       # после аварии не перезапускаем

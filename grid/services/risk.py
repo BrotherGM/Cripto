@@ -40,12 +40,15 @@ def is_blacklisted(inst_id, cfg=None) -> bool:
     return inst in bl or base in bl
 
 
-# --- экспозиция (вложенный капитал) ------------------------------------------
+# --- экспозиция (вложенный капитал, с учётом плеча) --------------------------
 def _sum_notional(order_qs, pos_qs):
+    """Ноционал = стоимость × плечо стратегии (для спота leverage=1 — без изменений)."""
     orders = order_qs.aggregate(
-        v=Sum(F("price") * F("size"), output_field=DecimalField()))["v"] or Decimal("0")
+        v=Sum(F("price") * F("size") * F("strategy__leverage"),
+              output_field=DecimalField()))["v"] or Decimal("0")
     positions = pos_qs.aggregate(
-        v=Sum(F("base_qty") * F("avg_price"), output_field=DecimalField()))["v"] or Decimal("0")
+        v=Sum(F("base_qty") * F("avg_price") * F("strategy__leverage"),
+              output_field=DecimalField()))["v"] or Decimal("0")
     return orders + positions
 
 
@@ -70,13 +73,15 @@ def allow_buy(strategy, quote_amount) -> tuple[bool, str]:
     cfg = settings()
     if not cfg.enabled:
         return True, ""
-    q = Decimal(str(quote_amount or 0))
+    # ноционал новой покупки с учётом плеча (спот: leverage=1)
+    lev = Decimal(str(getattr(strategy, "leverage", 1) or 1))
+    q = Decimal(str(quote_amount or 0)) * lev
     if is_blacklisted(strategy.inst_id, cfg):
         return False, f"{strategy.inst_id} в чёрном списке"
     if cfg.max_position_per_pair and pair_exposure(strategy.inst_id) + q > cfg.max_position_per_pair:
-        return False, f"лимит на пару {cfg.max_position_per_pair} USDT превышен"
+        return False, f"лимит на пару {cfg.max_position_per_pair} USDT превышен (ноционал с плечом ×{lev:g})"
     if cfg.max_total_exposure and total_exposure() + q > cfg.max_total_exposure:
-        return False, f"лимит общей экспозиции {cfg.max_total_exposure} USDT превышен"
+        return False, f"лимит общей экспозиции {cfg.max_total_exposure} USDT превышен (ноционал с плечом ×{lev:g})"
     return True, ""
 
 
@@ -160,4 +165,29 @@ def fee_step_warnings(strategy) -> list[str]:
         if tp is not None and Decimal(str(tp)) < double_fee:
             out.append(f"Take-profit {tp}% меньше удвоенной комиссии {double_fee}% — "
                        f"торговля может идти в убыток.")
+    return out
+
+
+# --- предупреждения по плечу / марже / ликвидации ----------------------------
+def leverage_warnings(strategy) -> list[str]:
+    """Предупреждения по марже и плечу: несоответствие режима и близость к ликвидации."""
+    out = []
+    lev = int(getattr(strategy, "leverage", 1) or 1)
+    td = getattr(strategy, "td_mode", "cash")
+    is_spot = getattr(strategy, "inst_type", "SPOT") == "SPOT"
+
+    # соответствие инструмента и режима маржи
+    if not is_spot and td == "cash":
+        out.append("Для деривативов (SWAP/фьючерс) нужен режим маржи isolated/cross, а не cash.")
+    if is_spot and td in ("isolated", "cross") and lev > 1:
+        out.append("Плечо на SPOT работает только при включённой спот-марже на аккаунте OKX.")
+
+    # оценка риска ликвидации (грубая эвристика без учёта комиссий/поддерж. маржи)
+    if td in ("isolated", "cross") and lev > 1:
+        move = 100.0 / lev
+        out.append(f"Плечо ×{lev}: ликвидация ориентировочно при движении ~{move:.1f}% "
+                   f"против позиции (без учёта комиссий и поддерживающей маржи).")
+        if lev >= 10:
+            out.append(f"Высокое плечо ×{lev} — очень высокий риск ликвидации; "
+                       f"усреднение/докупка на падении с плечом особенно опасны.")
     return out
