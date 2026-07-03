@@ -10,8 +10,9 @@ from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, get_object_or_404
+from django.utils.dateparse import parse_date
 
 from grid.models import GridStrategy, GridOrder, Side, StrategyStatus
 from grid.services import okx_client as okx
@@ -136,8 +137,17 @@ def build_chart_data(strategy: GridStrategy, bar: str = "1H") -> dict:
 
 @staff_member_required
 def dashboard_index(request):
+    mode = request.GET.get("mode", "")
     strategies = GridStrategy.objects.all()
-    return render(request, "grid/dashboard.html", {"strategies": strategies})
+    if mode in ("demo", "live"):
+        strategies = strategies.filter(mode=mode)
+    counts = {
+        "all": GridStrategy.objects.count(),
+        "demo": GridStrategy.objects.filter(mode="demo").count(),
+        "live": GridStrategy.objects.filter(mode="live").count(),
+    }
+    return render(request, "grid/dashboard.html",
+                  {"strategies": strategies, "mode": mode, "counts": counts})
 
 
 @staff_member_required
@@ -180,6 +190,10 @@ def closed_trades_data(request):
             "ts": o.created_at.isoformat(),
             "pair": o.strategy.inst_id,
             "strategy": o.strategy.name,
+            "strategy_type": o.strategy.strategy_type,
+            "type_display": o.strategy.get_strategy_type_display(),
+            "mode": o.strategy.mode,
+            "mode_display": o.strategy.get_mode_display(),
             "side": o.side,
             "side_display": o.get_side_display(),
             "price": _f(o.price),
@@ -190,8 +204,111 @@ def closed_trades_data(request):
             "state_display": o.get_state_display(),
         })
     states = {r["state"]: r["state_display"] for r in rows}
+    types = {r["strategy_type"]: r["type_display"] for r in rows}
     return JsonResponse({
         "orders": rows,
         "pairs": sorted({r["pair"] for r in rows}),
         "states": [{"value": k, "label": v} for k, v in sorted(states.items())],
+        "types": [{"value": k, "label": v} for k, v in sorted(types.items())],
     })
+
+
+def _filtered_closed_orders(params):
+    """Закрытые ордера с применением фильтров из GET (для экспорта)."""
+    qs = (GridOrder.objects
+          .filter(state__in=_CLOSED_STATES)
+          .select_related("strategy"))
+    if params.get("pair"):
+        qs = qs.filter(strategy__inst_id=params["pair"])
+    if params.get("type"):
+        qs = qs.filter(strategy__strategy_type=params["type"])
+    if params.get("mode"):
+        qs = qs.filter(strategy__mode=params["mode"])
+    if params.get("side"):
+        qs = qs.filter(side=params["side"])
+    if params.get("state"):
+        qs = qs.filter(state=params["state"])
+    if params.get("from") and (d := parse_date(params["from"])):
+        qs = qs.filter(created_at__date__gte=d)
+    if params.get("to") and (d := parse_date(params["to"])):
+        qs = qs.filter(created_at__date__lte=d)
+    return qs.order_by("-created_at")[:20000]
+
+
+@staff_member_required
+def export_closed_trades_xlsx(request):
+    """Экспорт отфильтрованных сделок в Excel (.xlsx) + итог заработка (нетто)."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return HttpResponse("Экспорт недоступен: не установлен openpyxl "
+                            "(добавьте в requirements и пересоберите).", status=500)
+
+    orders = _filtered_closed_orders(request.GET)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Сделки"
+    headers = ["Время", "Пара", "Тип стратегии", "Режим", "Стратегия", "Сторона",
+               "Цена", "Объём", "Исполнено", "Сумма, USDT", "Статус"]
+    ws.append(headers)
+    head_fill = PatternFill("solid", fgColor="1A5276")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center")
+
+    buy_sum = sell_sum = vol_sum = 0.0
+    for o in orders:
+        filled = float(o.filled_size or 0)
+        value = float((o.avg_px or o.price) or 0) * filled
+        ws.append([
+            o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            o.strategy.inst_id,
+            o.strategy.get_strategy_type_display(),
+            o.strategy.get_mode_display(),
+            o.strategy.name,
+            o.get_side_display(),
+            float(o.price or 0),
+            float(o.size or 0),
+            filled,
+            round(value, 4),
+            o.get_state_display(),
+        ])
+        vol_sum += filled
+        if o.side == Side.SELL:
+            sell_sum += value
+        else:
+            buy_sum += value
+
+    earnings = sell_sum - buy_sum
+    ws.append([])
+    summary = [
+        ("Σ покупки (USDT)", round(buy_sum, 4)),
+        ("Σ продажи (USDT)", round(sell_sum, 4)),
+        ("Σ объём (исполнено)", round(vol_sum, 8)),
+        ("Заработок (нетто = продажи − покупки), USDT", round(earnings, 4)),
+    ]
+    for label, val in summary:
+        ws.append(["", "", "", "", "", "", "", "", "", label, val])
+        ws.cell(row=ws.max_row, column=10).font = Font(bold=True)
+        ws.cell(row=ws.max_row, column=11).font = Font(
+            bold=True, color=("1E7E45" if val >= 0 else "C0392B") if "Заработок" in label else "000000")
+
+    # ширины столбцов
+    widths = [20, 12, 18, 8, 22, 10, 14, 14, 14, 16, 12]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ws.freeze_panes = "A2"
+
+    import io
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fname = "trades_" + datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S") + ".xlsx"
+    resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return resp

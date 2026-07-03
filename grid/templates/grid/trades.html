@@ -14,7 +14,21 @@
     .panel { background:#161b22; border:1px solid #232a33; border-radius:10px; padding:14px; }
     .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
     .controls label { display:block; font-size:11px; color:#9aa4b2; margin-bottom:3px; }
-    select, button { background:#1b212b; color:#e6e6e6; border:1px solid #2a313c; border-radius:7px; padding:6px 10px; font-size:13px; cursor:pointer; }
+    select, button, input[type=date] { background:#1b212b; color:#e6e6e6; border:1px solid #2a313c; border-radius:7px; padding:6px 10px; font-size:13px; cursor:pointer; }
+    input[type=date] { color-scheme:dark; }
+    button.export { background:#1e5e3a; border-color:#2a7d4f; }
+    button.export:hover { background:#25764a; }
+    .earn { color:#3fdc7a; font-weight:700; }
+    .earn.neg { color:#ff6b6b; }
+    .modesw { display:inline-flex; border:1px solid #2a313c; border-radius:9px; overflow:hidden; }
+    .modesw button { background:#161b22; border:0; border-right:1px solid #2a313c; border-radius:0; padding:7px 16px; color:#9aa4b2; font-weight:600; }
+    .modesw button:last-child { border-right:0; }
+    .modesw button.active[data-m=""] { background:#3a4657; color:#fff; }
+    .modesw button.active[data-m="demo"] { background:#5a6673; color:#fff; }
+    .modesw button.active[data-m="live"] { background:#c0392b; color:#fff; }
+    .md { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+    .md-demo { background:#2c333d; color:#c3ccd6; }
+    .md-live { background:#3a1212; color:#ff8a8a; }
     .summary { margin-left:auto; color:#9aa4b2; font-size:12.5px; }
     .wrap { overflow-x:auto; max-height:70vh; overflow-y:auto; }
     table.ct { width:100%; border-collapse:collapse; font-size:13px; }
@@ -37,32 +51,47 @@
       <h1>📒 Таблица торгов</h1>
       <div class="muted">Закрытые сделки (исполненные и отменённые) по всем стратегиям</div>
     </div>
-    <div><a href="/dashboard/">← Графики</a> &nbsp; <a href="/admin/">⚙️ Админка</a></div>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div class="modesw" id="modesw">
+        <button data-m="" class="active">Все</button>
+        <button data-m="demo">Демо</button>
+        <button data-m="live">Реал</button>
+      </div>
+      <div><a href="/dashboard/">← Графики</a> &nbsp; <a href="/admin/">⚙️ Админка</a></div>
+    </div>
   </div>
 
   <div class="panel">
     <div class="controls">
       <div><label>Пара</label><select id="f-pair"><option value="">Все</option></select></div>
+      <div><label>Тип стратегии</label><select id="f-type"><option value="">Все</option></select></div>
       <div><label>Сторона</label>
         <select id="f-side"><option value="">Все</option><option value="buy">Покупка</option><option value="sell">Продажа</option></select>
       </div>
       <div><label>Статус</label><select id="f-state"><option value="">Все</option></select></div>
+      <div><label>Дата с</label><input type="date" id="f-from"></div>
+      <div><label>Дата по</label><input type="date" id="f-to"></div>
       <div><label>Группировка</label>
         <select id="f-group">
           <option value="">Без группировки</option>
           <option value="pair">По паре</option>
+          <option value="type">По типу стратегии</option>
+          <option value="mode">По режиму</option>
           <option value="side">По стороне</option>
           <option value="state">По статусу</option>
         </select>
       </div>
       <div><label>&nbsp;</label><button id="f-refresh">↻ Обновить</button></div>
+      <div><label>&nbsp;</label><button id="f-reset">Сбросить фильтры</button></div>
+      <div><label>&nbsp;</label><button id="f-export" class="export">⬇ Экспорт в Excel</button></div>
       <span class="summary" id="summary"></span>
     </div>
     <div class="wrap">
       <table class="ct" id="tbl">
         <thead>
           <tr>
-            <th data-k="ts">Время</th><th data-k="pair">Пара</th><th data-k="side">Сторона</th>
+            <th data-k="ts">Время</th><th data-k="pair">Пара</th>
+            <th data-k="type_display">Тип</th><th data-k="mode_display">Режим</th><th data-k="side">Сторона</th>
             <th data-k="price" class="num">Цена</th><th data-k="size" class="num">Объём</th>
             <th data-k="filled" class="num">Исполнено</th><th data-k="value" class="num">Сумма</th>
             <th data-k="state">Статус</th>
@@ -75,15 +104,20 @@
 
 <script>
 (function(){
-  let DATA = [], sortK = 'ts', sortDir = -1;
+  let DATA = [], sortK = 'ts', sortDir = -1, modeFilter = '';
   const $ = id => document.getElementById(id);
   const fmt = (n,d=2) => (n==null?'—':Number(n).toLocaleString('ru-RU',{maximumFractionDigits:d}));
   const tstr = iso => new Date(iso).toLocaleString('ru-RU');
   const stCls = s => s==='filled'?'st-filled':'st-canceled';
 
   function filtered(){
-    const p=$('f-pair').value, sd=$('f-side').value, st=$('f-state').value;
-    let rows = DATA.filter(r => (!p||r.pair===p) && (!sd||r.side===sd) && (!st||r.state===st));
+    const p=$('f-pair').value, ty=$('f-type').value, sd=$('f-side').value, st=$('f-state').value,
+          df=$('f-from').value, dt=$('f-to').value;
+    let rows = DATA.filter(r => {
+      const d = (r.ts||'').slice(0,10);  // YYYY-MM-DD из ISO — сравнение строк корректно
+      return (!p||r.pair===p) && (!ty||r.strategy_type===ty) && (!modeFilter||r.mode===modeFilter) &&
+             (!sd||r.side===sd) && (!st||r.state===st) && (!df||d>=df) && (!dt||d<=dt);
+    });
     rows.sort((a,b)=>{
       let x=a[sortK], y=b[sortK];
       if(typeof x==='string'){x=x||'';y=y||'';return sortDir*x.localeCompare(y);}
@@ -91,8 +125,9 @@
     });
     return rows;
   }
+  const mdBadge = r => `<span class="md ${r.mode==='live'?'md-live':'md-demo'}">${r.mode_display||'—'}</span>`;
   const rowHtml = r => `<tr>
-      <td>${tstr(r.ts)}</td><td>${r.pair}</td>
+      <td>${tstr(r.ts)}</td><td>${r.pair}</td><td>${r.type_display||'—'}</td><td>${mdBadge(r)}</td>
       <td class="${r.side}">${r.side_display}</td>
       <td class="num">${fmt(r.price)}</td><td class="num">${fmt(r.size,6)}</td>
       <td class="num">${fmt(r.filled,6)}</td><td class="num">${fmt(r.value)}</td>
@@ -100,22 +135,33 @@
 
   function render(){
     const rows = filtered(), body = $('tbl').querySelector('tbody'), g = $('f-group').value;
-    if(!rows.length){ body.innerHTML = `<tr class="empty"><td colspan="8">Нет сделок</td></tr>`; }
+    if(!rows.length){ body.innerHTML = `<tr class="empty"><td colspan="10">Нет сделок</td></tr>`; }
     else if(!g){ body.innerHTML = rows.map(rowHtml).join(''); }
     else {
       const groups = {};
-      rows.forEach(r => { const k = g==='side'?r.side_display:(g==='state'?r.state_display:r[g]); (groups[k]=groups[k]||[]).push(r); });
+      rows.forEach(r => { const k = g==='side'?r.side_display:(g==='state'?r.state_display:(g==='type'?(r.type_display||'—'):(g==='mode'?(r.mode_display||'—'):r[g]))); (groups[k]=groups[k]||[]).push(r); });
       let html='';
       Object.keys(groups).sort().forEach(k=>{
         const gr=groups[k], vol=gr.reduce((s,r)=>s+(r.filled||0),0), val=gr.reduce((s,r)=>s+(r.value||0),0);
-        html += `<tr class="grp"><td colspan="4">▸ ${k} <span style="opacity:.7">(${gr.length})</span></td>`+
+        html += `<tr class="grp"><td colspan="6">▸ ${k} <span style="opacity:.7">(${gr.length})</span></td>`+
                 `<td class="num"></td><td class="num">${fmt(vol,6)}</td><td class="num">${fmt(val)}</td><td></td></tr>`;
         html += gr.map(rowHtml).join('');
       });
       body.innerHTML = html;
     }
     const vol=rows.reduce((s,r)=>s+(r.filled||0),0), val=rows.reduce((s,r)=>s+(r.value||0),0);
-    $('summary').textContent = `строк: ${rows.length} · Σ объём: ${fmt(vol,4)} · Σ сумма: ${fmt(val)} USDT`;
+    const sell=rows.reduce((s,r)=>s+(r.side==='sell'?(r.value||0):0),0);
+    const buy=rows.reduce((s,r)=>s+(r.side==='buy'?(r.value||0):0),0);
+    const earn=sell-buy;
+    $('summary').innerHTML = `строк: ${rows.length} · Σ объём: ${fmt(vol,4)} · Σ сумма: ${fmt(val)} USDT · ` +
+      `заработок (нетто): <span class="earn ${earn<0?'neg':''}">${earn>=0?'+':''}${fmt(earn)} USDT</span>`;
+  }
+  function exportUrl(){
+    const q = new URLSearchParams();
+    const map = {pair:'f-pair', type:'f-type', side:'f-side', state:'f-state', from:'f-from', to:'f-to'};
+    for(const [k,id] of Object.entries(map)){ const v=$(id).value; if(v) q.set(k,v); }
+    if(modeFilter) q.set('mode', modeFilter);
+    return '/dashboard/closed-trades.xlsx' + (q.toString()?('?'+q):'');
   }
   function fill(el, items, val, label){ items.forEach(it=>{ const o=document.createElement('option'); o.value=val(it); o.textContent=label(it); el.appendChild(o); }); }
 
@@ -124,12 +170,24 @@
       const d = await (await fetch('/dashboard/closed-trades.json')).json();
       DATA = d.orders||[];
       const ps=$('f-pair'); ps.length=1; fill(ps, d.pairs||[], x=>x, x=>x);
+      const ts=$('f-type'); ts.length=1; fill(ts, d.types||[], x=>x.value, x=>x.label);
       const ss=$('f-state'); ss.length=1; fill(ss, d.states||[], x=>x.value, x=>x.label);
       render();
     }catch(e){ console.error(e); }
   }
-  ['f-pair','f-side','f-state','f-group'].forEach(id=>$(id).onchange=render);
+  ['f-pair','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).onchange=render);
+  document.querySelectorAll('#modesw button').forEach(btn=>btn.onclick=()=>{
+    modeFilter = btn.dataset.m;
+    document.querySelectorAll('#modesw button').forEach(b=>b.classList.toggle('active', b===btn));
+    render();
+  });
   $('f-refresh').onclick=load;
+  $('f-export').onclick=()=>{ window.location = exportUrl(); };
+  $('f-reset').onclick=()=>{
+    ['f-pair','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).value='');
+    modeFilter=''; document.querySelectorAll('#modesw button').forEach(b=>b.classList.toggle('active', b.dataset.m===''));
+    render();
+  };
   $('tbl').querySelectorAll('th').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortK===k) sortDir*=-1; else {sortK=k; sortDir=1;} render(); });
   load();
 })();

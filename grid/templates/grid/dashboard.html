@@ -22,19 +22,35 @@
     .emergency { background:#3a1212; color:#ff6b6b; }
     .draft   { background:#23262d; color:#9aa4b2; }
     .empty { padding:40px; text-align:center; color:#9aa4b2; }
+    .modesw { display:inline-flex; border:1px solid #2a313c; border-radius:9px; overflow:hidden; }
+    .modesw a { padding:7px 16px; color:#9aa4b2; font-weight:600; font-size:13px; border-right:1px solid #2a313c; }
+    .modesw a:last-child { border-right:0; }
+    .modesw a.active[data-m=""] { background:#3a4657; color:#fff; }
+    .modesw a.active[data-m="demo"] { background:#5a6673; color:#fff; }
+    .modesw a.active[data-m="live"] { background:#c0392b; color:#fff; }
+    .md { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+    .md-demo { background:#2c333d; color:#c3ccd6; }
+    .md-live { background:#3a1212; color:#ff8a8a; }
   </style>
 </head>
 <body>
   <div class="top">
     <h1>📈 Cripto — торговые стратегии</h1>
-    <span><a href="/admin/">⚙️ Админка</a></span>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div class="modesw">
+        <a data-m="" href="?" class="{% if not mode %}active{% endif %}">Все ({{ counts.all }})</a>
+        <a data-m="demo" href="?mode=demo" class="{% if mode == 'demo' %}active{% endif %}">Демо ({{ counts.demo }})</a>
+        <a data-m="live" href="?mode=live" class="{% if mode == 'live' %}active{% endif %}">Реал ({{ counts.live }})</a>
+      </div>
+      <span><a href="/admin/">⚙️ Админка</a></span>
+    </div>
   </div>
 
   {% if strategies %}
   <table>
     <thead>
       <tr>
-        <th>Стратегия</th><th>Инструмент</th><th>Статус</th>
+        <th>Стратегия</th><th>Инструмент</th><th>Режим</th><th>Статус</th>
         <th>Диапазон</th><th>Уровней</th><th>Объём</th><th></th>
       </tr>
     </thead>
@@ -43,6 +59,7 @@
       <tr>
         <td><b>{{ s.name }}</b></td>
         <td>{{ s.inst_id }}</td>
+        <td><span class="md {% if s.mode == 'live' %}md-live{% else %}md-demo{% endif %}">{{ s.get_mode_display }}</span></td>
         <td><span class="badge {{ s.status }}">{{ s.get_status_display }}</span></td>
         <td>{{ s.p_min|floatformat:"-2" }} … {{ s.p_max|floatformat:"-2" }}</td>
         <td>{{ s.levels }}</td>

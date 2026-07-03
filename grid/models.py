@@ -29,7 +29,7 @@ class StrategyType(models.TextChoices):
 
 
 class TradingMode(models.TextChoices):
-    DEMO = "demo", "Демо (тест)"
+    DEMO = "demo", "Демо"
     LIVE = "live", "Реал"
 
 
