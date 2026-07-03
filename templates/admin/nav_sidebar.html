@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n gridextras %}
 <button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
 <nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
   <input type="search" id="nav-filter"
@@ -29,7 +29,23 @@
     </table>
   </div>
 
-  {# Отдельный блок меню: Документы #}
+  {# Приложения, кроме Authentication and Authorization (напр. Grid) #}
+  {% include 'admin/app_list.html' with app_list=available_apps|apps_except:'auth' show_changelinks=False %}
+
+  {# Отдельный блок меню: Сервис (API) — два пункта Демо / Реал #}
+  <div class="module" id="grid-service-nav">
+    <table>
+      <caption>
+        <a href="/admin/grid/service/demo/" class="section" title="Сервис (API)">🛠 Сервис (API)</a>
+      </caption>
+      <tbody>
+        <tr><th scope="row"><a href="/admin/grid/service/demo/">Демо — запросы к тестовому API</a></th></tr>
+        <tr><th scope="row"><a href="/admin/grid/service/real/">Реал — запросы к боевому API</a></th></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Отдельный блок меню: Документы — перед Authentication and Authorization #}
   <div class="module" id="grid-docs-nav">
     <table>
       <caption>
@@ -41,5 +57,6 @@
     </table>
   </div>
 
-  {% include 'admin/app_list.html' with app_list=available_apps show_changelinks=False %}
+  {# Authentication and Authorization — в самом низу #}
+  {% include 'admin/app_list.html' with app_list=available_apps|apps_only:'auth' show_changelinks=False %}
 </nav>

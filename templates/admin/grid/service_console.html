@@ -1,0 +1,109 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; Сервис (API)
+  &rsaquo; {% if is_live %}Реал{% else %}Демо{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  {# --- переключатель режима Демо / Реал --- #}
+  <div style="display:flex; gap:8px; margin-bottom:14px; align-items:center;">
+    <a href="{{ demo_url }}?inst={{ inst|urlencode }}{% if active_key %}&q={{ active_key }}{% endif %}"
+       style="padding:7px 16px; border-radius:8px; text-decoration:none; font-weight:600;
+              {% if not is_live %}background:#7f8c8d; color:#fff;{% else %}background:#eee; color:#555;{% endif %}">
+       демо</a>
+    <a href="{{ real_url }}?inst={{ inst|urlencode }}{% if active_key %}&q={{ active_key }}{% endif %}"
+       style="padding:7px 16px; border-radius:8px; text-decoration:none; font-weight:600;
+              {% if is_live %}background:#c0392b; color:#fff;{% else %}background:#eee; color:#555;{% endif %}">
+       РЕАЛ</a>
+    <span style="color:#777; font-size:12px; margin-left:8px;">
+      {% if is_live %}⚠ боевые ключи (flag=0){% else %}тестовый аккаунт (x-simulated-trading){% endif %}
+      · только чтение, ордера не выставляются</span>
+  </div>
+
+  {# --- каталог сервисных запросов --- #}
+  <form method="get" class="module" style="padding:12px 14px; margin-bottom:16px;">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+      <label style="font-weight:600;">Пара (instId):</label>
+      <input type="text" name="inst" value="{{ inst }}" placeholder="BTC-USDT"
+             style="padding:5px 8px; width:150px; text-transform:uppercase;">
+      <span style="color:#888; font-size:12px;">— используется пунктами с меткой
+        <span style="background:#f0ad4e; color:#fff; padding:0 6px; border-radius:8px;
+                     font-size:11px;">пара</span></span>
+    </div>
+
+    {% for group_title, items in catalog %}
+    <div style="margin-top:12px;">
+      <div style="font-weight:700; color:#1a5276; margin-bottom:6px;">{{ group_title }}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% for it in items %}
+        <button type="submit" name="q" value="{{ it.key }}"
+                style="cursor:pointer; padding:7px 12px; border-radius:8px; border:1px solid #cfd6dd;
+                       font-size:13px;
+                       {% if it.key == active_key %}background:#264b7a; color:#fff; border-color:#264b7a;
+                       {% else %}background:#fff; color:#222;{% endif %}">
+          {{ it.title }}{% if it.needs_inst %}
+          <span style="background:#f0ad4e; color:#fff; padding:0 6px; border-radius:8px;
+                       font-size:10px; margin-left:4px;">пара</span>{% endif %}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </form>
+
+  {# --- результат --- #}
+  {% if result %}
+    {% if result.ok %}
+    <div class="module">
+      <h2 style="margin:0; padding:10px 14px; background:#eef3f8;">
+        {{ result.title }}
+        <span style="font-weight:400; color:#666; font-size:13px;">
+          · режим {% if is_live %}РЕАЛ{% else %}демо{% endif %}
+          {% if result.needs_inst %} · {{ inst }}{% endif %}
+          · записей: {{ result.count }}</span>
+      </h2>
+
+      {% if result.columns %}
+      <div style="overflow-x:auto;">
+        <table style="width:100%; font-size:12.5px;">
+          <thead><tr>
+            {% for c in result.columns %}<th style="text-align:left;">{{ c }}</th>{% endfor %}
+          </tr></thead>
+          <tbody>
+            {% for row in result.rows %}
+            <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if result.count > result.rows|length %}
+      <p style="color:#888; padding:6px 14px;">Показаны первые {{ result.rows|length }} из {{ result.count }} — полный ответ в JSON ниже.</p>
+      {% endif %}
+      {% else %}
+      <p style="padding:8px 14px; color:#666;">Табличное представление недоступно — смотрите JSON ниже.</p>
+      {% endif %}
+
+      <details style="padding:8px 14px;">
+        <summary style="cursor:pointer; color:#264b7a;">Показать сырой ответ (JSON)</summary>
+        <pre style="background:#1e1e1e; color:#dcdcdc; padding:12px; border-radius:8px;
+                    overflow-x:auto; max-height:460px; font-size:12px;">{{ result.raw }}</pre>
+      </details>
+    </div>
+    {% else %}
+    <div class="module" style="border:1px solid #e0b4b4;">
+      <p style="padding:12px 14px; color:#a33; margin:0;">
+        <b>{{ result.title|default:"Ошибка" }}:</b> {{ result.error }}</p>
+    </div>
+    {% endif %}
+  {% else %}
+  <p style="color:#666;">Выберите сервисный запрос выше — результат появится здесь
+    (таблица + полный JSON).</p>
+  {% endif %}
+</div>
+{% endblock %}

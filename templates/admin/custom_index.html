@@ -1,50 +1,78 @@
 {% extends "admin/index.html" %}
+{% load gridextras %}
 
 {% block content %}
-{{ block.super }}
+<div id="content-main">
 
-{# Блок «Графики торговли» #}
-<div class="module" id="grid-charts-module">
-  <table>
-    <caption>
-      <a href="/dashboard/" class="section" title="Графики торговли">📈 Графики торговли</a>
-    </caption>
-    <tbody>
-      <tr>
-        <th scope="row"><a href="/dashboard/">Дашборд — все стратегии</a></th>
-        <td><a href="/dashboard/">Открыть →</a></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+  {# Блок «Графики торговли» #}
+  <div class="module" id="grid-charts-module">
+    <table>
+      <caption>
+        <a href="/dashboard/" class="section" title="Графики торговли">📈 Графики торговли</a>
+      </caption>
+      <tbody>
+        <tr>
+          <th scope="row"><a href="/dashboard/">Дашборд — все стратегии</a></th>
+          <td><a href="/dashboard/">Открыть →</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-{# Блок «Таблица торгов» (в том же виде, что и «Графики торговли») #}
-<div class="module" id="grid-trades-module">
-  <table>
-    <caption>
-      <a href="/dashboard/trades/" class="section" title="Таблица торгов">📒 Таблица торгов</a>
-    </caption>
-    <tbody>
-      <tr>
-        <th scope="row"><a href="/dashboard/trades/">Сделки — фильтры и группировка</a></th>
-        <td><a href="/dashboard/trades/">Открыть →</a></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+  {# Блок «Таблица торгов» #}
+  <div class="module" id="grid-trades-module">
+    <table>
+      <caption>
+        <a href="/dashboard/trades/" class="section" title="Таблица торгов">📒 Таблица торгов</a>
+      </caption>
+      <tbody>
+        <tr>
+          <th scope="row"><a href="/dashboard/trades/">Сделки — фильтры и группировка</a></th>
+          <td><a href="/dashboard/trades/">Открыть →</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-{# Блок «Документы» — отдельный пункт меню #}
-<div class="module" id="grid-docs-module">
-  <table>
-    <caption>
-      <a href="/admin/grid/document/" class="section" title="Документы">📄 Документы</a>
-    </caption>
-    <tbody>
-      <tr>
-        <th scope="row"><a href="/admin/grid/document/">Руководства и инструкции (PDF)</a></th>
-        <td><a href="/admin/grid/document/">Открыть →</a></td>
-      </tr>
-    </tbody>
-  </table>
+  {# Приложения, кроме Authentication and Authorization (напр. Grid) #}
+  {% include "admin/app_list.html" with app_list=app_list|apps_except:'auth' show_changelinks=True %}
+
+  {# Блок «Сервис (API)» — два пункта Демо / Реал #}
+  <div class="module" id="grid-service-module">
+    <table>
+      <caption>
+        <a href="/admin/grid/service/demo/" class="section" title="Сервис (API)">🛠 Сервис (API)</a>
+      </caption>
+      <tbody>
+        <tr>
+          <th scope="row"><a href="/admin/grid/service/demo/">Демо — запросы к тестовому API</a></th>
+          <td><a href="/admin/grid/service/demo/">Открыть →</a></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href="/admin/grid/service/real/">Реал — запросы к боевому API</a></th>
+          <td><a href="/admin/grid/service/real/">Открыть →</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Блок «Документы» — перед Authentication and Authorization #}
+  <div class="module" id="grid-docs-module">
+    <table>
+      <caption>
+        <a href="/admin/grid/document/" class="section" title="Документы">📄 Документы</a>
+      </caption>
+      <tbody>
+        <tr>
+          <th scope="row"><a href="/admin/grid/document/">Руководства и инструкции (PDF)</a></th>
+          <td><a href="/admin/grid/document/">Открыть →</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Authentication and Authorization — в самом низу #}
+  {% include "admin/app_list.html" with app_list=app_list|apps_only:'auth' show_changelinks=True %}
+
 </div>
 {% endblock %}

@@ -10,7 +10,7 @@
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
-from django.urls import path
+from django.urls import path, reverse
 from django.utils.html import format_html
 
 import json
@@ -23,10 +23,13 @@ from django.http import FileResponse, Http404
 from grid.forms import QuickStrategyForm
 from grid.models import (
     GridStrategy, GridLevel, GridOrder, Trade, Position, StrategyLog, Instrument,
-    Document, GridType, StrategyType,
+    Document, Service, RiskSettings, EquitySnapshot, GridType, StrategyType,
 )
 from grid.services import okx_client as okx
+from grid.services import risk
 from grid.services import runner
+from grid.services import supervisor
+from grid.services import service_api
 from grid.services.builder import (
     create_strategy_for_pair, create_typed_strategy, DEFAULT_PARAMS,
 )
@@ -66,21 +69,22 @@ class StrategyLogInline(admin.TabularInline):
 class GridStrategyAdmin(admin.ModelAdmin):
     change_list_template = "admin/grid/gridstrategy/change_list.html"
     list_display = (
-        "name", "type_badge", "inst_id", "status_badge", "runner_badge",
+        "name", "type_badge", "mode_badge", "inst_id", "status_badge", "runner_badge",
         "order_size", "open_chart",
     )
-    list_filter = ("strategy_type", "status", "is_demo", "inst_type")
+    list_filter = ("mode", "strategy_type", "status", "inst_type")
     search_fields = ("name", "inst_id")
     inlines = [PositionInline, GridLevelInline, StrategyLogInline]
     readonly_fields = (
-        "trading_controls", "params_help",
+        "trading_controls", "params_help", "risk_check",
         "tick_sz", "lot_sz", "min_sz", "is_demo",
-        "runner_pid", "runner_started_at", "created_at", "updated_at",
+        "worker_state", "desired_state", "last_tick_at", "last_error",
+        "created_at", "updated_at",
     )
     fieldsets = (
         ("Основное", {
-            "fields": ("name", "strategy_type", "inst_id", "inst_type", "td_mode",
-                       "status", "trading_controls"),
+            "fields": ("name", "strategy_type", "mode", "inst_id", "inst_type", "td_mode",
+                       "status", "risk_check", "trading_controls"),
         }),
         ("Параметры стратегии (DCA / Trend / Scalping / Arbitrage)", {
             "fields": ("params", "params_help"),
@@ -95,13 +99,46 @@ class GridStrategyAdmin(admin.ModelAdmin):
         }),
         ("Стоп-лосс (сетка)", {"fields": ("stop_loss_enabled", "stop_loss_price"),
                                "classes": ("collapse",)}),
-        ("Рабочий цикл", {"fields": ("runner_pid", "runner_started_at")}),
+        ("Рабочий цикл (супервизор)", {
+            "fields": ("worker_state", "desired_state", "last_tick_at", "last_error"),
+            "description": "Желаемое состояние задаётся кнопками; непрерывный цикл ведёт "
+                           "воркер run_bots. «Живость» определяется по свежести heartbeat.",
+        }),
         ("Служебное", {"fields": ("created_at", "updated_at")}),
     )
     actions = (
-        "action_start_trading", "action_stop_trading", "action_check_connection",
+        "action_start_trading", "action_stop_trading", "action_stop_all",
+        "action_reconcile", "action_check_connection",
         "action_sync_instrument", "action_build_levels",
     )
+
+    @admin.action(description="🛑 Остановить ВСЕ стратегии (kill-switch)")
+    def action_stop_all(self, request, queryset):
+        n = risk.stop_all("ручной kill-switch из админки")
+        self.message_user(request, f"Kill-switch: остановлено запущенных стратегий — {n}.",
+                          messages.WARNING)
+
+    @admin.action(description="🔄 Синхронизировать с биржей (полная сверка)")
+    def action_reconcile(self, request, queryset):
+        try:
+            res = supervisor.reconcile_now()
+            self.message_user(
+                request,
+                f"Сверка завершена: приведены к желаемому состоянию все стратегии; "
+                f"отменено осиротевших ордеров — {res['canceled_orphans']}, "
+                f"исправлено рассинхронов ордеров — {res['fixed_orders']}.",
+                messages.SUCCESS)
+        except Exception as e:  # noqa: BLE001
+            self.message_user(request, f"Ошибка сверки: {e}", messages.ERROR)
+
+    @admin.display(description="Проверка риска (комиссия)")
+    def risk_check(self, obj):
+        if not obj or not obj.pk:
+            return "—"
+        warnings = risk.fee_step_warnings(obj)
+        if not warnings:
+            return format_html('<span style="color:#0a0">✓ шаг прибыли выше комиссии</span>')
+        return format_html('<b style="color:#c00">⚠ {}</b>', " ".join(warnings))
 
     @admin.display(description="Статус")
     def status_badge(self, obj):
@@ -117,8 +154,32 @@ class GridStrategyAdmin(admin.ModelAdmin):
     @admin.display(description="Цикл")
     def runner_badge(self, obj):
         if runner.is_running(obj):
-            return format_html('<b style="color:#0a0">● работает</b>')
+            return format_html('<b style="color:#0a0" title="свежий heartbeat">● работает</b>')
+        if runner.is_stale(obj):
+            return format_html(
+                '<b style="color:#c00" title="статус RUNNING, но воркер не тикает">'
+                '⚠ завис</b>')
+        if obj.desired_state == "run":
+            return format_html('<span style="color:#c80" title="ждёт воркер run_bots">'
+                               '◍ ожидает</span>')
         return format_html('<span style="color:#999">○ остановлен</span>')
+
+    @admin.display(description="Состояние воркера")
+    def worker_state(self, obj):
+        if not obj or not obj.pk:
+            return "—"
+        if runner.is_running(obj):
+            state = format_html('<b style="color:#0a0">● работает (heartbeat свежий)</b>')
+        elif runner.is_stale(obj):
+            state = format_html('<b style="color:#c00">⚠ завис — статус RUNNING, но '
+                                'воркер run_bots не тикает</b>')
+        elif obj.desired_state == "run":
+            state = format_html('<span style="color:#c80">◍ ожидает запуска воркером</span>')
+        else:
+            state = format_html('<span style="color:#999">○ остановлен</span>')
+        hb = obj.last_tick_at.strftime("%H:%M:%S") if obj.last_tick_at else "—"
+        return format_html('{} &nbsp;·&nbsp; желаемое: <b>{}</b> &nbsp;·&nbsp; '
+                           'heartbeat: {}', state, obj.get_desired_state_display(), hb)
 
     @admin.display(description="Тип")
     def type_badge(self, obj):
@@ -127,6 +188,14 @@ class GridStrategyAdmin(admin.ModelAdmin):
         return format_html('<b style="color:{}">{}</b>',
                            colors.get(obj.strategy_type, "#000"),
                            obj.get_strategy_type_display())
+
+    @admin.display(description="Режим")
+    def mode_badge(self, obj):
+        if obj.mode == "live":
+            return format_html('<b style="color:#fff; background:#c0392b; '
+                               'padding:1px 7px; border-radius:10px">РЕАЛ</b>')
+        return format_html('<span style="color:#fff; background:#7f8c8d; '
+                           'padding:1px 7px; border-radius:10px">демо</span>')
 
     @admin.display(description="Графики")
     def open_chart(self, obj):
@@ -165,18 +234,25 @@ class GridStrategyAdmin(admin.ModelAdmin):
         """
         if not obj or not obj.pk:
             return "Сохраните стратегию, чтобы управлять торговлей."
+        confirm = ("ВНИМАНИЕ! Реальная торговля на НАСТОЯЩИЕ деньги. "
+                   "Стратегия будет запущена в режиме РЕАЛ. Продолжить?")
+        btn = "color:#fff; padding:6px 12px; border:0; border-radius:6px; cursor:pointer;"
         return format_html(
             '<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">'
             '<input type="submit" name="_start_trading" value="▶️ Запустить торговлю" '
-            'style="background:#1f7a3d; color:#fff; padding:6px 12px; border:0; '
-            'border-radius:6px; cursor:pointer;">'
+            'style="background:#1f7a3d; {btn}">'
             '<input type="submit" name="_stop_trading" value="⏹ Остановить торговлю" '
-            'style="background:#a33; color:#fff; padding:6px 12px; border:0; '
-            'border-radius:6px; cursor:pointer;">'
-            '<a class="button" href="/dashboard/{}/" target="_blank" '
+            'style="background:#a33; {btn}">'
+            '<input type="submit" name="_copy_strategy" value="📋 Скопировать стратегию" '
+            'style="background:#566573; {btn}">'
+            '<input type="submit" name="_start_live" value="🔴 Торговать в реале" '
+            'onclick="return confirm(\'{confirm}\')" style="background:#c0392b; {btn}">'
+            '<input type="submit" name="_reconcile" value="🔄 Синхронизировать" '
+            'style="background:#7d3c98; {btn}">'
+            '<a class="button" href="/dashboard/{pk}/" target="_blank" '
             'style="background:#264b7a; color:#fff;">📈 Открыть графики</a>'
             '</div>',
-            obj.pk,
+            btn=btn, confirm=confirm, pk=obj.pk,
         )
 
     # --- кнопки запуска/остановки на странице объекта ------------------------
@@ -187,6 +263,32 @@ class GridStrategyAdmin(admin.ModelAdmin):
         if "_stop_trading" in request.POST:
             self._do(request, obj, runner.stop_trading)
             return HttpResponseRedirect(request.path)
+        if "_start_live" in request.POST:
+            # переключаем стратегию в РЕАЛ и запускаем
+            obj.mode = "live"
+            obj.save(update_fields=["mode", "updated_at"])
+            self.message_user(request, "⚠ Режим переключён на РЕАЛ.", messages.WARNING)
+            self._do(request, obj, runner.start_trading)
+            return HttpResponseRedirect(request.path)
+        if "_reconcile" in request.POST:
+            try:
+                supervisor.tick_strategy(obj)
+                obj.refresh_from_db()
+                self.message_user(
+                    request,
+                    f"Синхронизировано. Статус: {obj.get_status_display()}, "
+                    f"желаемое: {obj.get_desired_state_display()}."
+                    + (f" Ошибка: {obj.last_error}" if obj.last_error else ""),
+                    messages.SUCCESS if not obj.last_error else messages.WARNING)
+            except Exception as e:  # noqa: BLE001
+                self.message_user(request, f"Ошибка синхронизации: {e}", messages.ERROR)
+            return HttpResponseRedirect(request.path)
+        if "_copy_strategy" in request.POST:
+            new = self._copy(obj)
+            self.message_user(
+                request, f"Создана копия «{new.name}» (не запущена).", messages.SUCCESS)
+            return HttpResponseRedirect(
+                reverse("admin:grid_gridstrategy_change", args=[new.pk]))
         return super().response_change(request, obj)
 
     def _do(self, request, obj, fn):
@@ -198,6 +300,25 @@ class GridStrategyAdmin(admin.ModelAdmin):
             )
         except Exception as e:  # noqa: BLE001
             self.message_user(request, f"Ошибка: {e}", messages.ERROR)
+
+    def _copy(self, obj):
+        """Клонирует конфиг стратегии (без запуска). Возвращает новую стратегию."""
+        base = f"{obj.name} (копия)"
+        name, i = base, 2
+        while GridStrategy.objects.filter(name=name).exists():
+            name = f"{base} {i}"
+            i += 1
+        params = dict(obj.params or {})
+        params.pop("_state", None)  # рантайм-состояние не копируем
+        status = "ready" if obj.tick_sz is not None else "draft"
+        return GridStrategy.objects.create(
+            name=name, strategy_type=obj.strategy_type, mode=obj.mode,
+            inst_id=obj.inst_id, inst_type=obj.inst_type, td_mode=obj.td_mode,
+            params=params, p_max=obj.p_max, p_min=obj.p_min, levels=obj.levels,
+            grid_type=obj.grid_type, order_size=obj.order_size, tick_sz=obj.tick_sz,
+            lot_sz=obj.lot_sz, min_sz=obj.min_sz, stop_loss_enabled=obj.stop_loss_enabled,
+            stop_loss_price=obj.stop_loss_price, is_demo=obj.is_demo, status=status,
+        )
 
     # --- быстрое создание стратегии по паре ----------------------------------
     def get_urls(self):
@@ -458,8 +579,104 @@ class DocumentAdmin(admin.ModelAdmin):
                             as_attachment=as_attach, filename=name)
 
 
-admin.site.site_header = "Cripto — Grid Trading"
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    """Раздел «Сервис (API)»: страницы «Демо» и «Реал» с read-only запросами к OKX."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return True
+
+    def get_model_perms(self, request):
+        # Пустые права -> модель не показывается в группе Grid (это отдельный
+        # раздел меню с двумя пунктами Демо/Реал). URL-адреса при этом рабочие.
+        return {}
+
+    def get_urls(self):
+        return [
+            path("", self.admin_site.admin_view(self.redirect_view),
+                 name="grid_service_changelist"),
+            path("demo/", self.admin_site.admin_view(self.demo_view),
+                 name="grid_service_demo"),
+            path("real/", self.admin_site.admin_view(self.real_view),
+                 name="grid_service_real"),
+        ]
+
+    def redirect_view(self, request):
+        return redirect("admin:grid_service_demo")
+
+    def demo_view(self, request):
+        return self._console(request, "demo")
+
+    def real_view(self, request):
+        return self._console(request, "live")
+
+    def _console(self, request, mode):
+        inst = request.GET.get("inst", service_api.DEFAULT_INST)
+        key = request.GET.get("q", "")
+        result = service_api.run(mode, key, inst) if key else None
+        is_live = mode == "live"
+        ctx = {
+            **self.admin_site.each_context(request),
+            "title": f"Сервис (API) — {'РЕАЛ' if is_live else 'Демо'}",
+            "opts": self.model._meta,
+            "mode": mode,
+            "is_live": is_live,
+            "catalog": service_api.CATALOG,
+            "inst": inst,
+            "active_key": key,
+            "result": result,
+            "demo_url": reverse("admin:grid_service_demo"),
+            "real_url": reverse("admin:grid_service_real"),
+        }
+        return render(request, "admin/grid/service_console.html", ctx)
+
+
+@admin.register(RiskSettings)
+class RiskSettingsAdmin(admin.ModelAdmin):
+    """Глобальные риск-настройки — синглтон (одна запись)."""
+
+    def has_add_permission(self, request):
+        return not RiskSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        # синглтон: сразу открываем единственную запись на редактирование
+        obj = RiskSettings.load()
+        return HttpResponseRedirect(
+            reverse("admin:grid_risksettings_change", args=[obj.pk]))
+
+
+@admin.register(EquitySnapshot)
+class EquitySnapshotAdmin(admin.ModelAdmin):
+    list_display = ("ts", "equity")
+    date_hierarchy = "ts"
+    ordering = ("-ts",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+# Заголовок админки отражает режим: демо или РЕАЛЬНАЯ торговля (боевые ключи).
+if okx.is_live():
+    admin.site.site_header = "Cripto — ⚠ РЕАЛЬНАЯ ТОРГОВЛЯ (LIVE)"
+    admin.site.index_title = "⚠ РЕАЛЬНАЯ ТОРГОВЛЯ — используются боевые ключи (flag=0)"
+else:
+    admin.site.site_header = f"Cripto — Grid Trading (демо · режим {okx.mode()})"
+    admin.site.index_title = "Управление стратегиями · демо-режим"
 admin.site.site_title = "Cripto Admin"
-admin.site.index_title = "Управление сеточными стратегиями"
 # Главная страница админки с дополнительным блоком «Графики торговли»
 admin.site.index_template = "admin/custom_index.html"

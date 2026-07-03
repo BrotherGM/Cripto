@@ -152,11 +152,27 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # --- OKX API ---------------------------------------------------------------
-# flag = "1" -> демо/тест (по умолчанию), "0" -> реальная торговля
-OKX = {
+# Два независимых набора ключей: ДЕМО (тест) и РЕАЛ (боевая торговля).
+# Активный выбирается TRADING_MODE ("demo" | "live"). Все настройки стратегий
+# хранятся в БД и не зависят от режима — переключение режима переносит их.
+_OKX_DEBUG = os.getenv('OKX_DEBUG', 'false').lower() in ('1', 'true', 'yes')
+
+OKX_DEMO = {
     'API_KEY': os.getenv('OKX_API_KEY', ''),
     'API_SECRET': os.getenv('OKX_API_SECRET', ''),
     'PASSPHRASE': os.getenv('OKX_PASSPHRASE', ''),
-    'FLAG': os.getenv('OKX_FLAG', '1'),
-    'DEBUG': os.getenv('OKX_DEBUG', 'false').lower() in ('1', 'true', 'yes'),
+    'FLAG': os.getenv('OKX_FLAG', '1'),   # демо: "1"
+    'DEBUG': _OKX_DEBUG,
 }
+
+# Реал: если live-переменные не заданы — падают на демо (пока равны демо).
+OKX_LIVE = {
+    'API_KEY': os.getenv('OKX_LIVE_API_KEY', OKX_DEMO['API_KEY']),
+    'API_SECRET': os.getenv('OKX_LIVE_API_SECRET', OKX_DEMO['API_SECRET']),
+    'PASSPHRASE': os.getenv('OKX_LIVE_PASSPHRASE', OKX_DEMO['PASSPHRASE']),
+    'FLAG': os.getenv('OKX_LIVE_FLAG', '0'),   # реал: "0"
+    'DEBUG': _OKX_DEBUG,
+}
+
+TRADING_MODE = os.getenv('TRADING_MODE', 'demo').lower()  # 'demo' | 'live'
+OKX = OKX_LIVE if TRADING_MODE == 'live' else OKX_DEMO

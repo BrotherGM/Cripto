@@ -26,6 +26,7 @@ from grid.models import (
     Side, OrderState, StrategyStatus,
 )
 from grid.services import okx_client as okx
+from grid.services import risk
 from grid.services.grid_engine import _round_to_step
 
 
@@ -142,6 +143,18 @@ class BaseEngine:
         """Рыночный ордер. Для покупки — quote_amount (USDT), для продажи —
         base_amount (базовая валюта). Возвращает {'size','price'} или None."""
         inst = inst_id or self.s.inst_id
+        # Риск-контроль: ограничиваем только покупки (продажа снижает экспозицию)
+        if side == Side.BUY:
+            q = quote_amount
+            if q is None and base_amount is not None:
+                try:
+                    q = base_amount * self.price(inst)
+                except okx.OkxError:
+                    q = 0
+            allowed, reason = risk.allow_buy(self.s, q)
+            if not allowed:
+                self.log(f"Риск: покупка {inst} отклонена — {reason}", "warning")
+                return None
         cl = f"{self.s.strategy_type[:3]}{self.s.id}{uuid.uuid4().hex[:8]}"
         kwargs = dict(instId=inst, tdMode=self.s.td_mode, side=side,
                       ordType="market", clOrdId=cl)

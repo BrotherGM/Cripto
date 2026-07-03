@@ -5,8 +5,6 @@ flag = "1" -> демо/тест (по умолчанию), "0" -> реальна
 Демо использует тот же REST-хост; SDK сам выставляет заголовок
 `x-simulated-trading` по значению flag.
 """
-from functools import lru_cache
-
 from django.conf import settings
 from okx import Account, MarketData, PublicData, Trade
 
@@ -21,43 +19,69 @@ class OkxError(Exception):
         super().__init__(f"OKX error {code}: {msg}")
 
 
+# --- режим (demo/live) --------------------------------------------------------
+# Режим — на процесс: каждый рабочий цикл run_strategy обслуживает одну стратегию
+# и выставляет её режим через set_mode(). Клиенты кэшируются по режиму.
+_current_mode = None
+_clients: dict = {}
+
+
+def _mode() -> str:
+    global _current_mode
+    if _current_mode is None:
+        _current_mode = getattr(settings, "TRADING_MODE", "demo")
+    return _current_mode
+
+
+def set_mode(m: str):
+    """Устанавливает активный режим для последующих вызовов ('demo' | 'live')."""
+    global _current_mode
+    _current_mode = "live" if m == "live" else "demo"
+
+
+def mode() -> str:
+    return _mode()
+
+
 def _cfg():
-    return settings.OKX
+    return settings.OKX_LIVE if _mode() == "live" else settings.OKX_DEMO
 
 
 def is_demo() -> bool:
     return _cfg()["FLAG"] == "1"
 
 
-# --- SDK-клиенты (кэшируются) -------------------------------------------------
-@lru_cache(maxsize=1)
+def is_live() -> bool:
+    """Реальная торговля: боевые ключи и flag=0 (не демо)."""
+    return not is_demo()
+
+
+# --- SDK-клиенты (кэшируются по режиму) ---------------------------------------
+def _client(kind: str, factory):
+    key = (_mode(), kind)
+    if key not in _clients:
+        _clients[key] = factory(_cfg())
+    return _clients[key]
+
+
 def account_api() -> Account.AccountAPI:
-    c = _cfg()
-    return Account.AccountAPI(
+    return _client("account", lambda c: Account.AccountAPI(
         api_key=c["API_KEY"], api_secret_key=c["API_SECRET"],
-        passphrase=c["PASSPHRASE"], flag=c["FLAG"], debug=c["DEBUG"],
-    )
+        passphrase=c["PASSPHRASE"], flag=c["FLAG"], debug=c["DEBUG"]))
 
 
-@lru_cache(maxsize=1)
 def trade_api() -> Trade.TradeAPI:
-    c = _cfg()
-    return Trade.TradeAPI(
+    return _client("trade", lambda c: Trade.TradeAPI(
         api_key=c["API_KEY"], api_secret_key=c["API_SECRET"],
-        passphrase=c["PASSPHRASE"], flag=c["FLAG"], debug=c["DEBUG"],
-    )
+        passphrase=c["PASSPHRASE"], flag=c["FLAG"], debug=c["DEBUG"]))
 
 
-@lru_cache(maxsize=1)
 def market_api() -> MarketData.MarketAPI:
-    c = _cfg()
-    return MarketData.MarketAPI(flag=c["FLAG"], debug=c["DEBUG"])
+    return _client("market", lambda c: MarketData.MarketAPI(flag=c["FLAG"], debug=c["DEBUG"]))
 
 
-@lru_cache(maxsize=1)
 def public_api() -> PublicData.PublicAPI:
-    c = _cfg()
-    return PublicData.PublicAPI(flag=c["FLAG"], debug=c["DEBUG"])
+    return _client("public", lambda c: PublicData.PublicAPI(flag=c["FLAG"], debug=c["DEBUG"]))
 
 
 # --- Разбор ответов -----------------------------------------------------------
@@ -75,7 +99,8 @@ def unwrap(resp: dict):
 def check_connection() -> dict:
     """Лёгкая проверка связи (серверное время, без ключей)."""
     data = unwrap(public_api().get_system_time())
-    return {"connected": True, "demo": is_demo(), "server_time_ms": data[0]["ts"] if data else None}
+    return {"connected": True, "mode": mode(), "demo": is_demo(),
+            "server_time_ms": data[0]["ts"] if data else None}
 
 
 def get_instrument(inst_id: str, inst_type: str = "SPOT") -> dict:

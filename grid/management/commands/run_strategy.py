@@ -12,6 +12,8 @@ import time
 from django.core.management.base import BaseCommand, CommandError
 
 from grid.models import GridStrategy
+from grid.services import okx_client as okx
+from grid.services import risk
 from grid.services.engines import get_engine
 
 
@@ -25,14 +27,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         s = _resolve(opts["strategy"])
+        okx.set_mode(s.mode)  # весь цикл работает в режиме стратегии (demo/live)
         engine = get_engine(s)
         interval = opts["interval"]
         self.stdout.write(self.style.SUCCESS(
-            f"Цикл [{s.get_strategy_type_display()} · {s.name}] запущен. "
-            f"Период {interval}s. Ctrl+C — выход."
+            f"Цикл [{s.get_strategy_type_display()} · {s.name} · {s.get_mode_display()}] "
+            f"запущен. Период {interval}s. Ctrl+C — выход."
         ))
         try:
             while True:
+                # Килл-свитч: дневной убыток / просадка -> стоп всех стратегий
+                breached, reason = risk.account_breach()
+                if breached:
+                    self.stdout.write(self.style.ERROR(
+                        f"KILL-SWITCH: {reason} — аварийная остановка всех стратегий."))
+                    risk.stop_all(reason)
+                    break
                 stop = engine.tick()
                 if opts["once"] or stop:
                     break

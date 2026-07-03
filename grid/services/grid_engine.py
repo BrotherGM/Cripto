@@ -101,6 +101,18 @@ class GridEngine:
     def _place_order_for_level(self, level: GridLevel) -> GridOrder:
         """Размещает лимитный ордер для уровня и записывает GridOrder."""
         size = self.round_size(self.s.order_size)
+        # Риск-контроль покупок (blacklist / лимит на пару / общая экспозиция)
+        if level.side == Side.BUY:
+            from grid.services import risk
+            allowed, reason = risk.allow_buy(self.s, level.price * size)
+            if not allowed:
+                self.log(f"Риск: buy @ {level.price} отклонён — {reason}", "warning")
+                level.status = LevelStatus.FREE
+                level.save(update_fields=["status"])
+                return GridOrder.objects.create(
+                    strategy=self.s, level=level, side=level.side, price=level.price,
+                    size=size, state=OrderState.FAILED,
+                    cl_ord_id=f"grej{self.s.id}l{level.index}{uuid.uuid4().hex[:6]}")
         cl_ord_id = f"g{self.s.id}l{level.index}{uuid.uuid4().hex[:8]}"
         order = GridOrder.objects.create(
             strategy=self.s, level=level, cl_ord_id=cl_ord_id,

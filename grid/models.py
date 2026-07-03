@@ -28,6 +28,11 @@ class StrategyType(models.TextChoices):
     SCALPING = "scalping", "Скальпинг (Scalping)"
 
 
+class TradingMode(models.TextChoices):
+    DEMO = "demo", "Демо (тест)"
+    LIVE = "live", "Реал"
+
+
 class GridType(models.TextChoices):
     ARITHMETIC = "arithmetic", "Арифметическая (равномерная)"
     GEOMETRIC = "geometric", "Геометрическая (логарифмическая)"
@@ -76,6 +81,9 @@ class GridStrategy(models.Model):
         "Тип стратегии", max_length=12, choices=StrategyType.choices,
         default=StrategyType.GRID,
     )
+    mode = models.CharField(
+        "Режим", max_length=5, choices=TradingMode.choices, default=TradingMode.DEMO,
+        help_text="demo — тестовая торговля; live — реальная (боевые ключи).")
     inst_id = models.CharField("Инструмент (instId)", max_length=40, default="BTC-USDT")
     inst_type = models.CharField("Тип инструмента", max_length=10, default="SPOT")
     td_mode = models.CharField("Режим торговли (tdMode)", max_length=10, default="cash")
@@ -109,9 +117,17 @@ class GridStrategy(models.Model):
     status = models.CharField(
         "Статус", max_length=12, choices=StrategyStatus.choices, default=StrategyStatus.DRAFT
     )
+    # Желаемое состояние (управляет пользователь) — воркер приводит факт к нему.
+    desired_state = models.CharField(
+        "Желаемое состояние", max_length=4,
+        choices=[("run", "Запустить"), ("stop", "Остановить")], default="stop")
     is_demo = models.BooleanField("Демо-режим", default=True)
 
-    # Фоновый рабочий цикл (run_grid), запущенный из админки
+    # Heartbeat единого воркера (заполняется на каждом тике)
+    last_tick_at = models.DateTimeField("Последний тик", null=True, blank=True)
+    last_error = models.CharField("Последняя ошибка", max_length=300, blank=True)
+
+    # Фоновый рабочий цикл (устаревшее, от прежней модели «процесс на стратегию»)
     runner_pid = models.PositiveIntegerField("PID рабочего цикла", null=True, blank=True)
     runner_started_at = models.DateTimeField("Цикл запущен", null=True, blank=True)
 
@@ -340,3 +356,73 @@ class Document(models.Model):
         default_permissions = ()  # без add/change/delete
         verbose_name = "Документ"
         verbose_name_plural = "Документы"
+
+
+class Service(models.Model):
+    """Фиктивная модель (без таблицы) — раздел «Сервис (API)».
+
+    Данных не хранит: страницы «Демо»/«Реал» выполняют read-only запросы к
+    соответствующему API OKX (баланс, конфигурация, ордера, инструменты, тикеры…).
+    """
+
+    class Meta:
+        managed = False
+        default_permissions = ()
+        verbose_name = "Сервис (API)"
+        verbose_name_plural = "Сервис (API)"
+
+
+class RiskSettings(models.Model):
+    """Глобальные риск-лимиты (синглтон, pk=1). Раздел 10 документа Cryptobot."""
+
+    enabled = models.BooleanField("Риск-контроль включён", default=True)
+    max_position_per_pair = models.DecimalField(
+        "Макс. позиция на пару, USDT", null=True, blank=True, **PRICE,
+        help_text="Потолок вложенного в одну пару (позиция + активные buy-ордера).")
+    max_total_exposure = models.DecimalField(
+        "Макс. общая экспозиция, USDT", null=True, blank=True, **PRICE,
+        help_text="Суммарный потолок вложенного по всем стратегиям.")
+    daily_loss_limit = models.DecimalField(
+        "Дневной лимит убытка, USDT", null=True, blank=True, **PRICE,
+        help_text="При падении эквити за день на эту сумму — аварийная остановка всех.")
+    max_drawdown_pct = models.DecimalField(
+        "Макс. просадка, %", null=True, blank=True, max_digits=6, decimal_places=2,
+        help_text="При просадке эквити от пика на этот % — аварийная остановка всех.")
+    blacklist = models.TextField(
+        "Чёрный список", blank=True,
+        help_text="Монеты или пары через запятую/пробел (напр. DOGE, SHIB-USDT) — торговля запрещена.")
+    fee_pct = models.DecimalField(
+        "Комиссия (для проверки шага), %", default=Decimal("0.1"),
+        max_digits=6, decimal_places=4)
+    updated_at = models.DateTimeField("Обновлены", auto_now=True)
+
+    class Meta:
+        verbose_name = "Риск-настройки"
+        verbose_name_plural = "Риск-настройки"
+
+    def __str__(self):
+        return "Риск-настройки"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # синглтон
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class EquitySnapshot(models.Model):
+    """Снимок общей эквити аккаунта (для дневного убытка и просадки)."""
+
+    ts = models.DateTimeField("Время", auto_now_add=True, db_index=True)
+    equity = models.DecimalField("Эквити, USDT", **PRICE)
+
+    class Meta:
+        verbose_name = "Снимок эквити"
+        verbose_name_plural = "Снимки эквити"
+        ordering = ["-ts"]
+
+    def __str__(self):
+        return f"{self.ts:%Y-%m-%d %H:%M} — {self.equity}"

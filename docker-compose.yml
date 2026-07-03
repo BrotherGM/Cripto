@@ -12,3 +12,19 @@ services:
     # gunicorn слушает порт 8077 прямо на хосте (при host-сети ports: не используется)
     command: gunicorn cripto.wsgi:application --bind 0.0.0.0:8077 --workers 3 --timeout 120
     restart: unless-stopped
+
+  # Единый воркер-супервизор: держит торговые циклы всех стратегий, реагирует на
+  # исполнения/стоп-лосс, сверяет БД с биржей. Единственный экземпляр гарантирует
+  # advisory-lock внутри run_bots. Именно он приводит факт к desired_state, поэтому
+  # веб можно перезапускать без потери состояния торговли.
+  worker:
+    build: .
+    container_name: cripto_worker
+    env_file: .env
+    network_mode: "host"
+    environment:
+      DB_HOST: localhost
+    command: python manage.py run_bots --interval 5 --reconcile-every 12
+    restart: unless-stopped
+    depends_on:
+      - web
