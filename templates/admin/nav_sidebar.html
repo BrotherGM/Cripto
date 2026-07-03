@@ -17,5 +17,17 @@
     </table>
   </div>
 
+  {# Отдельный блок меню: Таблица торгов #}
+  <div class="module" id="grid-trades-nav">
+    <table>
+      <caption>
+        <a href="/dashboard/trades/" class="section" title="Таблица торгов">📒 Таблица торгов</a>
+      </caption>
+      <tbody>
+        <tr><th scope="row"><a href="/dashboard/trades/">Сделки — фильтры и группировка</a></th></tr>
+      </tbody>
+    </table>
+  </div>
+
   {% include 'admin/app_list.html' with app_list=available_apps show_changelinks=False %}
 </nav>

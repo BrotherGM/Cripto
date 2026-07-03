@@ -4,34 +4,112 @@
 <div class="breadcrumbs">
   <a href="{% url 'admin:index' %}">Главная</a>
   &rsaquo; <a href="{% url 'admin:grid_gridstrategy_changelist' %}">Стратегии</a>
-  &rsaquo; Быстрое создание по паре
+  &rsaquo; Мастер создания
 </div>
 {% endblock %}
 
 {% block content %}
 <div id="content-main">
-  <p style="max-width:680px">
-    Укажите пары — для каждой создастся стратегия с автоматическим заполнением полей:
-    параметры инструмента (tickSz / lotSz / minSz) подтянутся с биржи, диапазон
-    <b>Pmax/Pmin</b> рассчитается от текущей цены (± %), <b>объём ордера</b> — из целевого
-    размера в USDT, <b>уровни сетки</b> рассчитаются автоматически (статус «Готова»).
+  <p style="max-width:720px">
+    <b>Мастер создания стратегии.</b> Выберите тип и укажите пары — первоначальные
+    данные заполняются автоматически: для <b>сетки</b> диапазон и объём считаются по
+    рынку, для остальных типов параметры предзаполняются дефолтами (их можно
+    отредактировать). Характеристики инструмента (tickSz/lotSz/minSz) подтягиваются с биржи.
   </p>
 
   <form method="post">{% csrf_token %}
     <fieldset class="module aligned">
-      {% for field in form %}
+      <div class="form-row">{{ form.strategy_type.label_tag }} {{ form.strategy_type }}</div>
+      <div class="form-row">
+        {{ form.pairs.label_tag }} {{ form.pairs }}
+        <div class="help">{{ form.pairs.help_text }}</div>
+        {% for e in form.pairs.errors %}<p class="errornote">{{ e }}</p>{% endfor %}
+      </div>
+
+      <div class="form-row">
+        <label>Выбрать пару с биржи:</label>
+        {% if instruments %}
+        <select id="pair-picker" style="min-width:220px">
+          <option value="">— из справочника ({{ instruments|length }} пар) —</option>
+          {% for i in instruments %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+        </select>
+        <button type="button" id="pair-add" class="button">Добавить в список ↑</button>
+        <div class="help">Справочник пар обновляется в разделе
+          «<a href="{% url 'admin:grid_instrument_changelist' %}">Инструменты (пары)</a>»
+          кнопкой «🔄 Обновить пары с биржи».</div>
+        {% else %}
+        <div class="help">Справочник пуст. Обновите его:
+          «<a href="{% url 'admin:grid_instrument_changelist' %}">Инструменты (пары)</a>»
+          → «🔄 Обновить пары с биржи», затем вернитесь сюда.</div>
+        {% endif %}
+      </div>
+
+      <div id="grid-fields">
+        <div class="form-row">{{ form.range_pct.label_tag }} {{ form.range_pct }}</div>
+        <div class="form-row">{{ form.levels.label_tag }} {{ form.levels }}</div>
+        <div class="form-row">{{ form.order_notional.label_tag }} {{ form.order_notional }}</div>
+        <div class="form-row">{{ form.grid_type.label_tag }} {{ form.grid_type }}</div>
+      </div>
+
+      <div id="params-field">
         <div class="form-row">
-          {{ field.label_tag }}
-          {{ field }}
-          {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
-          {% for e in field.errors %}<p class="errornote">{{ e }}</p>{% endfor %}
+          {{ form.params.label_tag }} {{ form.params }}
+          <div class="help">{{ form.params.help_text }}</div>
+          {% for e in form.params.errors %}<p class="errornote">{{ e }}</p>{% endfor %}
         </div>
-      {% endfor %}
+      </div>
+
+      <div class="form-row">{{ form.start }} {{ form.start.label_tag }}
+        <div class="help">{{ form.start.help_text }}</div>
+      </div>
     </fieldset>
+
     <div class="submit-row">
-      <input type="submit" value="Создать стратегии" class="default">
+      <input type="submit" value="Создать стратегию" class="default">
       <a href="{% url 'admin:grid_gridstrategy_changelist' %}" class="closelink">Отмена</a>
     </div>
   </form>
 </div>
+
+<script>
+(function(){
+  const DEFAULTS = {{ defaults_json|safe }};
+  const typeSel   = document.getElementById('id_strategy_type');
+  const gridBox   = document.getElementById('grid-fields');
+  const paramsBox = document.getElementById('params-field');
+  const paramsTa  = document.getElementById('id_params');
+
+  // Отметка «пользователь правил вручную» — чтобы не затирать его правки.
+  paramsTa.addEventListener('input', function(){ paramsTa.dataset.edited = '1'; });
+
+  function update(){
+    const t = typeSel.value;
+    const isGrid = (t === 'grid');
+    gridBox.style.display   = isGrid ? '' : 'none';
+    paramsBox.style.display = isGrid ? 'none' : '';
+    // Предзаполняем params дефолтами типа, если поле пустое или ещё не правилось руками
+    if (!isGrid && DEFAULTS[t] && (!paramsTa.value.trim() || paramsTa.dataset.edited !== '1')) {
+      paramsTa.value = JSON.stringify(DEFAULTS[t], null, 2);
+      paramsTa.dataset.edited = '';
+    }
+  }
+  typeSel.addEventListener('change', update);
+  update();
+
+  // Пикер пар: добавить выбранную пару в список (textarea)
+  const picker = document.getElementById('pair-picker');
+  const addBtn = document.getElementById('pair-add');
+  const pairsTa = document.getElementById('id_pairs');
+  if (addBtn && picker && pairsTa) {
+    addBtn.addEventListener('click', function(){
+      const v = picker.value;
+      if (!v) return;
+      const lines = pairsTa.value.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+      if (!lines.includes(v)) lines.push(v);
+      pairsTa.value = lines.join('\n');
+      picker.value = '';
+    });
+  }
+})();
+</script>
 {% endblock %}

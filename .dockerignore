@@ -15,4 +15,5 @@ db.sqlite3
 .DS_Store
 .claude/
 commands.txt
-*.pdf
+# PDF в docs/ должны попасть в образ (страница «Документы»); прочие PDF в корне — нет
+/*.pdf

@@ -1,8 +1,9 @@
 {% extends "admin/index.html" %}
 
-{# Главная админки: добавляем отдельный блок «Графики торговли» #}
 {% block content %}
 {{ block.super }}
+
+{# Блок «Графики торговли» #}
 <div class="module" id="grid-charts-module">
   <table>
     <caption>
@@ -12,6 +13,21 @@
       <tr>
         <th scope="row"><a href="/dashboard/">Дашборд — все стратегии</a></th>
         <td><a href="/dashboard/">Открыть →</a></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# Блок «Таблица торгов» (в том же виде, что и «Графики торговли») #}
+<div class="module" id="grid-trades-module">
+  <table>
+    <caption>
+      <a href="/dashboard/trades/" class="section" title="Таблица торгов">📒 Таблица торгов</a>
+    </caption>
+    <tbody>
+      <tr>
+        <th scope="row"><a href="/dashboard/trades/">Сделки — фильтры и группировка</a></th>
+        <td><a href="/dashboard/trades/">Открыть →</a></td>
       </tr>
     </tbody>
   </table>

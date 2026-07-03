@@ -157,6 +157,57 @@ class GridEngine:
         self.log(f"Начальная сетка размещена: {placed} ордеров активны.")
         return placed
 
+    # --- единый интерфейс движка (start/tick/stop) ---------------------------
+    def start(self) -> dict:
+        """Запуск сетки: инструмент -> уровни -> размещение. Статус -> «Запущена»."""
+        if self.s.tick_sz is None:
+            self.sync_instrument()
+        if not self.s.grid_levels.exists():
+            self.build_levels()
+        placed = self.place_initial_grid()
+        return {"ok": True, "msg": f"Сетка размещена: {placed} ордеров."}
+
+    def tick(self) -> bool:
+        """Один проход рабочего цикла сетки. Возвращает True, если завершить цикл."""
+        self.s.refresh_from_db()
+        if self.s.status != StrategyStatus.RUNNING:
+            return True
+        try:
+            current = Decimal(okx.get_last_price(self.s.inst_id))
+        except okx.OkxError:
+            return False
+        if self.check_stop_loss(current):
+            return True
+        live = self.s.orders.filter(state__in=[OrderState.LIVE, OrderState.PARTIALLY_FILLED])
+        for order in live:
+            self._sync_order(order)
+        return False
+
+    def _sync_order(self, order: GridOrder):
+        """Сверяет ордер с биржей и обрабатывает новые исполнения."""
+        if not order.ord_id:
+            return
+        try:
+            data = okx.get_order(self.s.inst_id, ord_id=order.ord_id)
+        except okx.OkxError:
+            return
+        if not data:
+            return
+        acc_fill = Decimal(data.get("accFillSz") or "0")
+        delta = acc_fill - (order.filled_size or Decimal("0"))
+        if delta > 0:
+            ut = data.get("uTime")
+            from datetime import datetime, timezone as _tz
+            ts = datetime.fromtimestamp(int(ut) / 1000, tz=_tz.utc) if ut else None
+            self.on_fill(
+                order, fill_price=data.get("avgPx") or data.get("fillPx") or order.price,
+                fill_size=delta, trade_id=data.get("tradeId", ""), ts=ts,
+                fee=Decimal(data.get("fee") or "0"), fee_ccy=data.get("feeCcy", ""),
+            )
+        elif data.get("state") == "canceled":
+            order.state = OrderState.CANCELED
+            order.save(update_fields=["state"])
+
     # --- 3.2 реакция на исполнение -------------------------------------------
     def on_fill(self, order: GridOrder, fill_price: Decimal, fill_size: Decimal,
                 trade_id: str = "", ts=None, fee=Decimal("0"), fee_ccy=""):

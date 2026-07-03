@@ -13,7 +13,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
 from django.shortcuts import render, get_object_or_404
 
-from grid.models import GridStrategy, Side, StrategyStatus
+from grid.models import GridStrategy, GridOrder, Side, StrategyStatus
 from grid.services import okx_client as okx
 
 
@@ -152,3 +152,46 @@ def strategy_chart_data(request, pk: int):
     strategy = get_object_or_404(GridStrategy, pk=pk)
     bar = request.GET.get("bar", "1H")
     return JsonResponse(build_chart_data(strategy, bar=bar))
+
+
+# Закрытые сделки = завершённые ордера, которые были на бирже (исполнены/отменены).
+# Отклонённые биржей (failed) — это ошибки размещения, не сделки, их не показываем.
+_CLOSED_STATES = ("filled", "canceled")
+
+
+@staff_member_required
+def trades_page(request):
+    """Отдельная страница с таблицей торгов (фильтры + группировка)."""
+    return render(request, "grid/trades.html", {})
+
+
+@staff_member_required
+def closed_trades_data(request):
+    """Все закрытые сделки (исполненные/отменённые ордера) по всем стратегиям."""
+    qs = (GridOrder.objects
+          .filter(state__in=_CLOSED_STATES)
+          .select_related("strategy", "level")
+          .order_by("-created_at")[:2000])
+    rows = []
+    for o in qs:
+        filled = o.filled_size or Decimal("0")
+        value = (o.avg_px or o.price) * filled if filled else Decimal("0")
+        rows.append({
+            "ts": o.created_at.isoformat(),
+            "pair": o.strategy.inst_id,
+            "strategy": o.strategy.name,
+            "side": o.side,
+            "side_display": o.get_side_display(),
+            "price": _f(o.price),
+            "size": _f(o.size),
+            "filled": _f(filled),
+            "value": _f(value),
+            "state": o.state,
+            "state_display": o.get_state_display(),
+        })
+    states = {r["state"]: r["state_display"] for r in rows}
+    return JsonResponse({
+        "orders": rows,
+        "pairs": sorted({r["pair"] for r in rows}),
+        "states": [{"value": k, "label": v} for k, v in sorted(states.items())],
+    })

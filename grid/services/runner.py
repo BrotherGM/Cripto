@@ -24,7 +24,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from grid.models import StrategyStatus
-from grid.services.grid_engine import GridEngine
+from grid.services.engines import get_engine
 
 
 def _pid_alive(pid: int) -> bool:
@@ -45,8 +45,9 @@ def cycle_pids(strategy) -> list[int]:
     if strategy.runner_pid and _pid_alive(strategy.runner_pid):
         pids.add(strategy.runner_pid)
     try:
+        # ловим и старый (run_grid), и единый (run_strategy) циклы
         out = subprocess.check_output(
-            ["pgrep", "-f", f"run_grid --strategy {strategy.id} "], text=True
+            ["pgrep", "-f", f"--strategy {strategy.id} "], text=True
         )
         pids.update(int(p) for p in out.split())
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
@@ -71,14 +72,14 @@ def is_running(strategy) -> bool:
 
 
 def _spawn_cycle(strategy, interval: float = 10.0) -> int:
-    """Запускает manage.py run_grid отдельным detached-процессом."""
+    """Запускает единый рабочий цикл manage.py run_strategy отдельным процессом."""
     manage_py = str(settings.BASE_DIR / "manage.py")
     logfile = settings.BASE_DIR / "logs"
     logfile.mkdir(exist_ok=True)
-    out = open(logfile / f"run_grid_{strategy.id}.log", "ab")  # noqa: SIM115
+    out = open(logfile / f"run_strategy_{strategy.id}.log", "ab")  # noqa: SIM115
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     proc = subprocess.Popen(
-        [sys.executable, manage_py, "run_grid",
+        [sys.executable, manage_py, "run_strategy",
          "--strategy", str(strategy.id), "--interval", str(interval)],
         stdout=out, stderr=out, cwd=str(settings.BASE_DIR),
         start_new_session=True, env=env,
@@ -107,25 +108,18 @@ def start_trading(strategy, interval: float = 10.0) -> dict:
     for pid in existing:
         _kill(pid)
 
-    engine = GridEngine(strategy)
+    # 1) стартовые действия под тип стратегии (для сетки — расчёт и размещение)
+    engine = get_engine(strategy)
+    res = engine.start()
 
-    # 1) параметры инструмента + уровни (если ещё не рассчитаны)
-    if strategy.tick_sz is None:
-        engine.sync_instrument()
-    if not strategy.grid_levels.exists():
-        engine.build_levels()
-
-    # 2) размещаем сетку (только свободные уровни — безопасно при повторном запуске)
-    placed = engine.place_initial_grid()
-
-    # 3) поднимаем фоновый цикл
+    # 2) поднимаем единый фоновый цикл
     pid = _spawn_cycle(strategy, interval)
     strategy.runner_pid = pid
     strategy.runner_started_at = timezone.now()
     strategy.status = StrategyStatus.RUNNING
     strategy.save(update_fields=["runner_pid", "runner_started_at", "status", "updated_at"])
-    engine.log(f"Торговля запущена из админки: размещено {placed} ордеров, цикл PID {pid}.")
-    return {"ok": True, "msg": f"Торговля запущена: {placed} ордеров, рабочий цикл PID {pid}."}
+    engine.log(f"Запущена из админки. {res.get('msg', '')} Цикл PID {pid}.")
+    return {"ok": True, "msg": f"{res.get('msg', 'Запущена.')} Рабочий цикл PID {pid}."}
 
 
 def stop_trading(strategy) -> dict:
@@ -134,11 +128,11 @@ def stop_trading(strategy) -> dict:
     for pid in pids:
         _kill(pid)
 
-    canceled = GridEngine(strategy).stop()  # отмена ордеров + статус STOPPED
+    canceled = get_engine(strategy).stop()  # отмена ордеров + статус STOPPED
     strategy.runner_pid = None
     strategy.runner_started_at = None
     strategy.save(update_fields=["runner_pid", "runner_started_at", "updated_at"])
-    msg = f"Торговля остановлена: отменено {canceled} ордеров."
+    msg = f"Торговля остановлена: отменено активных ордеров {canceled}."
     if pids:
         msg += f" Рабочих циклов завершено: {len(pids)}."
     return {"ok": True, "msg": msg}

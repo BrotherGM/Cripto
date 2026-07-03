@@ -20,6 +20,14 @@ PRICE = dict(max_digits=30, decimal_places=12)
 QTY = dict(max_digits=30, decimal_places=12)
 
 
+class StrategyType(models.TextChoices):
+    GRID = "grid", "Сетка (Grid)"
+    DCA = "dca", "Усреднение (DCA)"
+    TREND = "trend", "Следование за трендом (Trend)"
+    ARBITRAGE = "arbitrage", "Арбитраж (Arbitrage)"
+    SCALPING = "scalping", "Скальпинг (Scalping)"
+
+
 class GridType(models.TextChoices):
     ARITHMETIC = "arithmetic", "Арифметическая (равномерная)"
     GEOMETRIC = "geometric", "Геометрическая (логарифмическая)"
@@ -27,7 +35,7 @@ class GridType(models.TextChoices):
 
 class StrategyStatus(models.TextChoices):
     DRAFT = "draft", "Черновик"
-    READY = "ready", "Готова (уровни рассчитаны)"
+    READY = "ready", "Готова"
     RUNNING = "running", "Запущена"
     STOPPED = "stopped", "Остановлена"
     EMERGENCY = "emergency", "Аварийный выход (stop-loss)"
@@ -55,23 +63,36 @@ class OrderState(models.TextChoices):
 
 
 class GridStrategy(models.Model):
-    """Конфигурация и состояние одной сеточной стратегии."""
+    """Конфигурация и состояние торговой стратегии.
+
+    Изначально модель описывала только сетку (Grid); теперь это универсальная
+    модель для всех типов стратегий (см. strategy_type). Общие поля — вверху,
+    специфичные для сетки — в блоке ниже, а параметры остальных типов (DCA,
+    Trend, Arbitrage, Scalping) хранятся в JSON-поле params.
+    """
 
     name = models.CharField("Название", max_length=120, unique=True)
+    strategy_type = models.CharField(
+        "Тип стратегии", max_length=12, choices=StrategyType.choices,
+        default=StrategyType.GRID,
+    )
     inst_id = models.CharField("Инструмент (instId)", max_length=40, default="BTC-USDT")
     inst_type = models.CharField("Тип инструмента", max_length=10, default="SPOT")
     td_mode = models.CharField("Режим торговли (tdMode)", max_length=10, default="cash")
 
-    # 2.1 Диапазон сетки
-    p_max = models.DecimalField("Верхняя цена (Pmax)", **PRICE)
-    p_min = models.DecimalField("Нижняя цена (Pmin)", **PRICE)
-    levels = models.PositiveIntegerField("Число уровней (N)", default=10)
+    # Параметры стратегий, кроме сетки (DCA/Trend/Arbitrage/Scalping) — в JSON.
+    params = models.JSONField("Параметры стратегии", default=dict, blank=True)
+
+    # 2.1 Диапазон сетки (только для strategy_type=grid)
+    p_max = models.DecimalField("Верхняя цена (Pmax)", null=True, blank=True, **PRICE)
+    p_min = models.DecimalField("Нижняя цена (Pmin)", null=True, blank=True, **PRICE)
+    levels = models.PositiveIntegerField("Число уровней (N)", default=10, null=True, blank=True)
     grid_type = models.CharField(
         "Тип сетки", max_length=12, choices=GridType.choices, default=GridType.ARITHMETIC
     )
 
-    # Объём одного ордера (в базовой валюте)
-    order_size = models.DecimalField("Объём ордера (база)", **QTY)
+    # Объём одного ордера сетки (в базовой валюте)
+    order_size = models.DecimalField("Объём ордера (база)", null=True, blank=True, **QTY)
 
     # 2.2 Параметры инструмента (подтягиваются с биржи)
     tick_sz = models.DecimalField("Шаг цены (tickSz)", null=True, blank=True, **PRICE)
@@ -98,25 +119,35 @@ class GridStrategy(models.Model):
     updated_at = models.DateTimeField("Обновлена", auto_now=True)
 
     class Meta:
-        verbose_name = "Стратегия (сетка)"
-        verbose_name_plural = "Стратегии (сетки)"
+        verbose_name = "Стратегия"
+        verbose_name_plural = "Стратегии"
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.name} [{self.inst_id}] ({self.get_status_display()})"
+        return f"{self.name} [{self.get_strategy_type_display()} · {self.inst_id}]"
 
     def clean(self):
-        if self.p_max is not None and self.p_min is not None and self.p_max <= self.p_min:
-            raise ValidationError("Pmax должна быть больше Pmin.")
-        if self.levels is not None and self.levels < 2:
-            raise ValidationError("Число уровней N должно быть не меньше 2.")
-        if self.p_min is not None and self.p_min <= 0:
-            raise ValidationError("Pmin должна быть положительной.")
+        # Валидация полей сетки — только для стратегии типа «grid».
+        if self.strategy_type == StrategyType.GRID:
+            if self.p_max is None or self.p_min is None:
+                raise ValidationError("Для сетки нужны Pmax и Pmin.")
+            if self.p_max <= self.p_min:
+                raise ValidationError("Pmax должна быть больше Pmin.")
+            if self.levels is None or self.levels < 2:
+                raise ValidationError("Число уровней N должно быть не меньше 2.")
+            if self.p_min <= 0:
+                raise ValidationError("Pmin должна быть положительной.")
+            if self.order_size is None or self.order_size <= 0:
+                raise ValidationError("Объём ордера сетки должен быть положительным.")
 
     @property
     def effective_stop_loss(self) -> Decimal:
-        """Цена стоп-лосса: явная или граница Pmin."""
+        """Цена стоп-лосса: явная или граница Pmin (для сетки)."""
         return self.stop_loss_price if self.stop_loss_price is not None else self.p_min
+
+    def param(self, key, default=None):
+        """Удобный доступ к params с дефолтом."""
+        return (self.params or {}).get(key, default)
 
     @property
     def is_active(self) -> bool:
@@ -266,3 +297,46 @@ class StrategyLog(models.Model):
 
     def __str__(self):
         return f"[{self.level}] {self.message[:60]}"
+
+
+class Instrument(models.Model):
+    """Справочник торговых пар биржи (кэш public/instruments).
+
+    Обновляется кнопкой «Обновить пары с биржи»; используется как источник
+    выбора пар в мастере создания стратегии.
+    """
+
+    inst_id = models.CharField("Инструмент (instId)", max_length=40, unique=True)
+    inst_type = models.CharField("Тип", max_length=10, default="SPOT")
+    base_ccy = models.CharField("Базовая валюта", max_length=20, blank=True)
+    quote_ccy = models.CharField("Котируемая валюта", max_length=20, blank=True)
+    tick_sz = models.DecimalField("Шаг цены", null=True, blank=True, **PRICE)
+    lot_sz = models.DecimalField("Шаг объёма", null=True, blank=True, **QTY)
+    min_sz = models.DecimalField("Мин. объём", null=True, blank=True, **QTY)
+    state = models.CharField("Состояние (биржа)", max_length=20, blank=True)
+    active = models.BooleanField(
+        "Active", default=True,
+        help_text="Показывать пару в мастере создания стратегии.")
+    updated_at = models.DateTimeField("Обновлён", auto_now=True)
+
+    class Meta:
+        verbose_name = "Инструмент (пара)"
+        verbose_name_plural = "Инструменты (пары)"
+        ordering = ["inst_id"]
+
+    def __str__(self):
+        return self.inst_id
+
+
+class Document(models.Model):
+    """Фиктивная модель (без таблицы) — пункт «Документы» в группе Grid.
+
+    Реальных данных не хранит: страница читает PDF-файлы из папки docs/ на диске,
+    поэтому новые файлы появляются автоматически.
+    """
+
+    class Meta:
+        managed = False          # таблицы в БД нет
+        default_permissions = ()  # без add/change/delete
+        verbose_name = "Документ"
+        verbose_name_plural = "Документы"

@@ -13,14 +13,25 @@ from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils.html import format_html
 
+import json
+import os
+from datetime import datetime, timezone as dt_timezone
+
+from django.conf import settings
+from django.http import FileResponse, Http404
+
 from grid.forms import QuickStrategyForm
 from grid.models import (
-    GridStrategy, GridLevel, GridOrder, Trade, Position, StrategyLog,
+    GridStrategy, GridLevel, GridOrder, Trade, Position, StrategyLog, Instrument,
+    Document, GridType, StrategyType,
 )
 from grid.services import okx_client as okx
 from grid.services import runner
-from grid.services.builder import create_strategy_for_pair
+from grid.services.builder import (
+    create_strategy_for_pair, create_typed_strategy, DEFAULT_PARAMS,
+)
 from grid.services.grid_engine import GridEngine
+from grid.services.instruments import refresh_instruments
 
 
 # --- инлайны -----------------------------------------------------------------
@@ -55,28 +66,35 @@ class StrategyLogInline(admin.TabularInline):
 class GridStrategyAdmin(admin.ModelAdmin):
     change_list_template = "admin/grid/gridstrategy/change_list.html"
     list_display = (
-        "name", "inst_id", "status_badge", "runner_badge", "grid_type", "levels",
-        "p_min", "p_max", "order_size", "open_chart",
+        "name", "type_badge", "inst_id", "status_badge", "runner_badge",
+        "order_size", "open_chart",
     )
-    list_filter = ("status", "grid_type", "is_demo", "inst_type")
+    list_filter = ("strategy_type", "status", "is_demo", "inst_type")
     search_fields = ("name", "inst_id")
     inlines = [PositionInline, GridLevelInline, StrategyLogInline]
     readonly_fields = (
-        "trading_controls",
+        "trading_controls", "params_help",
         "tick_sz", "lot_sz", "min_sz", "is_demo",
         "runner_pid", "runner_started_at", "created_at", "updated_at",
     )
     fieldsets = (
         ("Основное", {
-            "fields": ("name", "inst_id", "inst_type", "td_mode", "status", "trading_controls"),
+            "fields": ("name", "strategy_type", "inst_id", "inst_type", "td_mode",
+                       "status", "trading_controls"),
         }),
-        ("Диапазон сетки (раздел 2.1)", {
+        ("Параметры стратегии (DCA / Trend / Scalping / Arbitrage)", {
+            "fields": ("params", "params_help"),
+            "description": "JSON-параметры для не-сеточных типов. Схему см. ниже.",
+        }),
+        ("Диапазон сетки (только для типа «Сетка»)", {
             "fields": ("p_max", "p_min", "levels", "grid_type", "order_size"),
+            "classes": ("collapse",),
         }),
-        ("Параметры инструмента (раздел 2.2, с биржи)", {
+        ("Параметры инструмента (с биржи)", {
             "fields": ("tick_sz", "lot_sz", "min_sz", "is_demo"),
         }),
-        ("Стоп-лосс (раздел 4.2)", {"fields": ("stop_loss_enabled", "stop_loss_price")}),
+        ("Стоп-лосс (сетка)", {"fields": ("stop_loss_enabled", "stop_loss_price"),
+                               "classes": ("collapse",)}),
         ("Рабочий цикл", {"fields": ("runner_pid", "runner_started_at")}),
         ("Служебное", {"fields": ("created_at", "updated_at")}),
     )
@@ -102,9 +120,42 @@ class GridStrategyAdmin(admin.ModelAdmin):
             return format_html('<b style="color:#0a0">● работает</b>')
         return format_html('<span style="color:#999">○ остановлен</span>')
 
+    @admin.display(description="Тип")
+    def type_badge(self, obj):
+        colors = {"grid": "#2471a3", "dca": "#117a3d", "trend": "#8e44ad",
+                  "arbitrage": "#b9770e", "scalping": "#a93226"}
+        return format_html('<b style="color:{}">{}</b>',
+                           colors.get(obj.strategy_type, "#000"),
+                           obj.get_strategy_type_display())
+
     @admin.display(description="Графики")
     def open_chart(self, obj):
         return format_html('<a href="/dashboard/{}/" target="_blank">📈 открыть</a>', obj.id)
+
+    # Схемы параметров (params) по типам стратегий — подсказка в форме
+    PARAM_SCHEMAS = {
+        "dca": ('{"mode":"dip", "base_amount":100, "safety_amount":50, '
+                '"price_deviation_pct":2, "safety_count":5, "volume_scale":1.5, '
+                '"take_profit_pct":3}  ·  для расписания: {"mode":"schedule", '
+                '"base_amount":50, "interval_hours":24, "take_profit_pct":3}'),
+        "trend": ('{"bar":"1H", "fast":9, "slow":21, "order_amount":100, '
+                  '"use_rsi":true, "rsi_period":14, "rsi_overbought":70}'),
+        "scalping": '{"order_amount":50, "target_pct":0.3, "stop_pct":0.5}',
+        "arbitrage": ('{"base":"USDT", "mid":"BTC", "cross":"ETH", "amount":50, '
+                      '"min_profit_pct":0.3, "fee_pct":0.1, "execute":false}'),
+        "grid": "Сетка использует отдельные поля ниже (Pmax/Pmin/уровни/объём), params не нужен.",
+    }
+
+    @admin.display(description="Схема параметров")
+    def params_help(self, obj):
+        schema = self.PARAM_SCHEMAS.get(getattr(obj, "strategy_type", "grid"), "")
+        return format_html(
+            '<div style="font-size:12px; color:#555">Пример params для типа '
+            '<b>{}</b>:<br><code style="display:block; background:#f4f5f7; '
+            'padding:8px; border-radius:6px; margin-top:4px; white-space:pre-wrap">{}</code>'
+            '</div>',
+            obj.get_strategy_type_display() if obj and obj.pk else "—", schema,
+        )
 
     @admin.display(description="Управление торговлей")
     def trading_controls(self, obj):
@@ -157,20 +208,26 @@ class GridStrategyAdmin(admin.ModelAdmin):
         return custom + super().get_urls()
 
     def quick_create_view(self, request):
-        """Форма: задаёшь пары -> создаются стратегии с авто-заполнением полей."""
+        """Мастер: выбираешь тип и пары -> стратегии создаются с авто-заполнением."""
         if request.method == "POST":
             form = QuickStrategyForm(request.POST)
             if form.is_valid():
                 cd = form.cleaned_data
+                stype = cd["strategy_type"]
                 raw = cd["pairs"].replace(",", "\n").splitlines()
                 pairs = [p.strip() for p in raw if p.strip()]
                 created = 0
                 for pair in pairs:
                     try:
-                        res = create_strategy_for_pair(
-                            pair, range_pct=cd["range_pct"], levels=cd["levels"],
-                            order_notional=cd["order_notional"], grid_type=cd["grid_type"],
-                        )
+                        if stype == StrategyType.GRID:
+                            res = create_strategy_for_pair(
+                                pair, range_pct=cd.get("range_pct") or 10,
+                                levels=cd.get("levels") or 10,
+                                order_notional=cd.get("order_notional") or 15,
+                                grid_type=cd.get("grid_type") or GridType.ARITHMETIC,
+                            )
+                        else:
+                            res = create_typed_strategy(pair, stype, cd.get("params") or {})
                     except Exception as e:  # noqa: BLE001
                         self.message_user(request, f"{pair}: ошибка — {e}", messages.ERROR)
                         continue
@@ -187,11 +244,20 @@ class GridStrategyAdmin(admin.ModelAdmin):
         else:
             form = QuickStrategyForm()
 
+        instruments = list(
+            Instrument.objects.filter(active=True)
+            .order_by("inst_id").values_list("inst_id", flat=True)
+        )
         ctx = {
             **self.admin_site.each_context(request),
-            "title": "Быстрое создание стратегии по паре",
+            "title": "Мастер создания стратегии",
             "opts": self.model._meta,
             "form": form,
+            # дефолтные params по типам — для авто-заполнения в форме (JS)
+            "defaults_json": json.dumps(
+                {str(k): v for k, v in DEFAULT_PARAMS.items()}, ensure_ascii=False),
+            # справочник пар для выбора (кнопка «Обновить пары с биржи» в разделе Инструменты)
+            "instruments": instruments,
         }
         return render(request, "admin/grid/quick_create.html", ctx)
 
@@ -232,9 +298,14 @@ class GridStrategyAdmin(admin.ModelAdmin):
             except Exception as e:  # noqa: BLE001
                 self.message_user(request, f"[{s.name}] ошибка: {e}", messages.ERROR)
 
-    @admin.action(description="🧮 Рассчитать уровни сетки (без размещения)")
+    @admin.action(description="🧮 Рассчитать уровни сетки (только тип «Сетка»)")
     def action_build_levels(self, request, queryset):
         for s in queryset:
+            if s.strategy_type != "grid":
+                self.message_user(
+                    request, f"[{s.name}] расчёт уровней только для сеток — пропущено.",
+                    messages.WARNING)
+                continue
             try:
                 n = GridEngine(s).build_levels()
                 self.message_user(request, f"[{s.name}] рассчитано уровней: {n}", messages.SUCCESS)
@@ -282,6 +353,104 @@ class StrategyLogAdmin(admin.ModelAdmin):
     list_filter = ("level", "strategy")
     search_fields = ("message", "strategy__name")
     date_hierarchy = "created_at"
+
+
+@admin.register(Instrument)
+class InstrumentAdmin(admin.ModelAdmin):
+    """Справочник торговых пар с биржи + кнопка обновления."""
+    change_list_template = "admin/grid/instrument/change_list.html"
+    list_display = ("inst_id", "active", "base_ccy", "quote_ccy", "min_sz",
+                    "tick_sz", "state", "updated_at")
+    list_editable = ("active",)
+    list_filter = ("active", "inst_type", "quote_ccy", "state")
+    search_fields = ("inst_id", "base_ccy", "quote_ccy")
+    ordering = ("inst_id",)
+    list_per_page = 50
+    actions = ("make_active", "make_inactive")
+
+    @admin.action(description="✅ Сделать Active")
+    def make_active(self, request, queryset):
+        n = queryset.update(active=True)
+        self.message_user(request, f"Активировано пар: {n}", messages.SUCCESS)
+
+    @admin.action(description="🚫 Снять Active")
+    def make_inactive(self, request, queryset):
+        n = queryset.update(active=False)
+        self.message_user(request, f"Деактивировано пар: {n}", messages.WARNING)
+
+    def get_urls(self):
+        custom = [
+            path("refresh/", self.admin_site.admin_view(self.refresh_view),
+                 name="grid_instrument_refresh"),
+        ]
+        return custom + super().get_urls()
+
+    def refresh_view(self, request):
+        """Кнопка «Обновить пары с биржи»: тянет инструменты с OKX."""
+        try:
+            res = refresh_instruments("SPOT")
+            self.message_user(request, res["msg"], messages.SUCCESS)
+        except Exception as e:  # noqa: BLE001
+            self.message_user(request, f"Ошибка обновления: {e}", messages.ERROR)
+        return redirect("admin:grid_instrument_changelist")
+
+
+DOCS_DIR = settings.BASE_DIR / "docs"
+
+
+@admin.register(Document)
+class DocumentAdmin(admin.ModelAdmin):
+    """Пункт «Документы»: динамический список PDF из папки docs/."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return True
+
+    def get_urls(self):
+        return [
+            path("", self.admin_site.admin_view(self.list_view),
+                 name="grid_document_changelist"),
+            path("open/<str:filename>/", self.admin_site.admin_view(self.serve_view),
+                 name="grid_document_open"),
+        ]
+
+    def list_view(self, request):
+        files = []
+        if DOCS_DIR.exists():
+            for f in sorted(DOCS_DIR.glob("*.pdf")):
+                stt = f.stat()
+                files.append({
+                    "name": f.name,
+                    "size_kb": round(stt.st_size / 1024),
+                    "mtime": datetime.fromtimestamp(stt.st_mtime, tz=dt_timezone.utc),
+                })
+        ctx = {
+            **self.admin_site.each_context(request),
+            "title": "Документы",
+            "opts": self.model._meta,
+            "files": files,
+            "docs_dir": str(DOCS_DIR),
+        }
+        return render(request, "admin/grid/documents.html", ctx)
+
+    def serve_view(self, request, filename):
+        # безопасность: только имя файла (без путей), только .pdf, только из docs/
+        name = os.path.basename(filename)
+        path_ = (DOCS_DIR / name).resolve()
+        if (not name.lower().endswith(".pdf") or not path_.exists()
+                or DOCS_DIR.resolve() not in path_.parents):
+            raise Http404("Документ не найден")
+        as_attach = request.GET.get("download") == "1"
+        return FileResponse(open(path_, "rb"), content_type="application/pdf",
+                            as_attachment=as_attach, filename=name)
 
 
 admin.site.site_header = "Cripto — Grid Trading"

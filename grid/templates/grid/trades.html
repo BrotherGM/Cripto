@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cripto — таблица торгов</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family:-apple-system,Segoe UI,Roboto,sans-serif; background:#0e1117; color:#e6e6e6; margin:0; padding:20px; }
+    a { color:#4ea1ff; text-decoration:none; }
+    .top { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    h1 { font-size:20px; margin:0; }
+    .muted { color:#9aa4b2; font-size:13px; }
+    .panel { background:#161b22; border:1px solid #232a33; border-radius:10px; padding:14px; }
+    .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+    .controls label { display:block; font-size:11px; color:#9aa4b2; margin-bottom:3px; }
+    select, button { background:#1b212b; color:#e6e6e6; border:1px solid #2a313c; border-radius:7px; padding:6px 10px; font-size:13px; cursor:pointer; }
+    .summary { margin-left:auto; color:#9aa4b2; font-size:12.5px; }
+    .wrap { overflow-x:auto; max-height:70vh; overflow-y:auto; }
+    table.ct { width:100%; border-collapse:collapse; font-size:13px; }
+    table.ct th, table.ct td { padding:7px 9px; border-bottom:1px solid #232a33; text-align:left; white-space:nowrap; }
+    table.ct th { position:sticky; top:0; background:#1b212b; color:#9aa4b2; cursor:pointer; user-select:none; }
+    table.ct th:hover { color:#fff; }
+    table.ct tr:hover td { background:#1a2029; }
+    .grp td { background:#22303f; font-weight:700; color:#cfe3ff; }
+    .buy { color:#3fdc7a; } .sell { color:#ff6b6b; }
+    .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .st { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+    .st-filled { background:#10391f; color:#3fdc7a; }
+    .st-canceled { background:#2c2f36; color:#9aa4b2; }
+    .empty { text-align:center; color:#9aa4b2; padding:20px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>📒 Таблица торгов</h1>
+      <div class="muted">Закрытые сделки (исполненные и отменённые) по всем стратегиям</div>
+    </div>
+    <div><a href="/dashboard/">← Графики</a> &nbsp; <a href="/admin/">⚙️ Админка</a></div>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <div><label>Пара</label><select id="f-pair"><option value="">Все</option></select></div>
+      <div><label>Сторона</label>
+        <select id="f-side"><option value="">Все</option><option value="buy">Покупка</option><option value="sell">Продажа</option></select>
+      </div>
+      <div><label>Статус</label><select id="f-state"><option value="">Все</option></select></div>
+      <div><label>Группировка</label>
+        <select id="f-group">
+          <option value="">Без группировки</option>
+          <option value="pair">По паре</option>
+          <option value="side">По стороне</option>
+          <option value="state">По статусу</option>
+        </select>
+      </div>
+      <div><label>&nbsp;</label><button id="f-refresh">↻ Обновить</button></div>
+      <span class="summary" id="summary"></span>
+    </div>
+    <div class="wrap">
+      <table class="ct" id="tbl">
+        <thead>
+          <tr>
+            <th data-k="ts">Время</th><th data-k="pair">Пара</th><th data-k="side">Сторона</th>
+            <th data-k="price" class="num">Цена</th><th data-k="size" class="num">Объём</th>
+            <th data-k="filled" class="num">Исполнено</th><th data-k="value" class="num">Сумма</th>
+            <th data-k="state">Статус</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+(function(){
+  let DATA = [], sortK = 'ts', sortDir = -1;
+  const $ = id => document.getElementById(id);
+  const fmt = (n,d=2) => (n==null?'—':Number(n).toLocaleString('ru-RU',{maximumFractionDigits:d}));
+  const tstr = iso => new Date(iso).toLocaleString('ru-RU');
+  const stCls = s => s==='filled'?'st-filled':'st-canceled';
+
+  function filtered(){
+    const p=$('f-pair').value, sd=$('f-side').value, st=$('f-state').value;
+    let rows = DATA.filter(r => (!p||r.pair===p) && (!sd||r.side===sd) && (!st||r.state===st));
+    rows.sort((a,b)=>{
+      let x=a[sortK], y=b[sortK];
+      if(typeof x==='string'){x=x||'';y=y||'';return sortDir*x.localeCompare(y);}
+      return sortDir*((x||0)-(y||0));
+    });
+    return rows;
+  }
+  const rowHtml = r => `<tr>
+      <td>${tstr(r.ts)}</td><td>${r.pair}</td>
+      <td class="${r.side}">${r.side_display}</td>
+      <td class="num">${fmt(r.price)}</td><td class="num">${fmt(r.size,6)}</td>
+      <td class="num">${fmt(r.filled,6)}</td><td class="num">${fmt(r.value)}</td>
+      <td><span class="st ${stCls(r.state)}">${r.state_display}</span></td></tr>`;
+
+  function render(){
+    const rows = filtered(), body = $('tbl').querySelector('tbody'), g = $('f-group').value;
+    if(!rows.length){ body.innerHTML = `<tr class="empty"><td colspan="8">Нет сделок</td></tr>`; }
+    else if(!g){ body.innerHTML = rows.map(rowHtml).join(''); }
+    else {
+      const groups = {};
+      rows.forEach(r => { const k = g==='side'?r.side_display:(g==='state'?r.state_display:r[g]); (groups[k]=groups[k]||[]).push(r); });
+      let html='';
+      Object.keys(groups).sort().forEach(k=>{
+        const gr=groups[k], vol=gr.reduce((s,r)=>s+(r.filled||0),0), val=gr.reduce((s,r)=>s+(r.value||0),0);
+        html += `<tr class="grp"><td colspan="4">▸ ${k} <span style="opacity:.7">(${gr.length})</span></td>`+
+                `<td class="num"></td><td class="num">${fmt(vol,6)}</td><td class="num">${fmt(val)}</td><td></td></tr>`;
+        html += gr.map(rowHtml).join('');
+      });
+      body.innerHTML = html;
+    }
+    const vol=rows.reduce((s,r)=>s+(r.filled||0),0), val=rows.reduce((s,r)=>s+(r.value||0),0);
+    $('summary').textContent = `строк: ${rows.length} · Σ объём: ${fmt(vol,4)} · Σ сумма: ${fmt(val)} USDT`;
+  }
+  function fill(el, items, val, label){ items.forEach(it=>{ const o=document.createElement('option'); o.value=val(it); o.textContent=label(it); el.appendChild(o); }); }
+
+  async function load(){
+    try{
+      const d = await (await fetch('/dashboard/closed-trades.json')).json();
+      DATA = d.orders||[];
+      const ps=$('f-pair'); ps.length=1; fill(ps, d.pairs||[], x=>x, x=>x);
+      const ss=$('f-state'); ss.length=1; fill(ss, d.states||[], x=>x.value, x=>x.label);
+      render();
+    }catch(e){ console.error(e); }
+  }
+  ['f-pair','f-side','f-state','f-group'].forEach(id=>$(id).onchange=render);
+  $('f-refresh').onclick=load;
+  $('tbl').querySelectorAll('th').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortK===k) sortDir*=-1; else {sortK=k; sortDir=1;} render(); });
+  load();
+})();
+</script>
+</body>
+</html>

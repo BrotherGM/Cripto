@@ -9,9 +9,48 @@
 """
 from decimal import Decimal, ROUND_DOWN
 
-from grid.models import GridStrategy, GridType, StrategyStatus
+from grid.models import GridStrategy, GridType, StrategyStatus, StrategyType
 from grid.services import okx_client as okx
 from grid.services.grid_engine import GridEngine, _round_to_step
+
+
+# Дефолтные params по типам стратегий (используются при создании без явных params)
+DEFAULT_PARAMS = {
+    StrategyType.DCA: {"mode": "dip", "base_amount": 100, "safety_amount": 50,
+                       "price_deviation_pct": 2, "safety_count": 5, "volume_scale": 1.5,
+                       "take_profit_pct": 3},
+    StrategyType.TREND: {"bar": "1H", "fast": 9, "slow": 21, "order_amount": 100,
+                         "use_rsi": True, "rsi_period": 14, "rsi_overbought": 70},
+    StrategyType.SCALPING: {"order_amount": 50, "target_pct": 0.3, "stop_pct": 0.5},
+    StrategyType.ARBITRAGE: {"base": "USDT", "mid": "BTC", "cross": "ETH", "amount": 50,
+                             "min_profit_pct": 0.3, "fee_pct": 0.1, "execute": False},
+}
+
+
+def create_typed_strategy(inst_id, strategy_type, params=None, *,
+                          inst_type="SPOT", name=None) -> dict:
+    """Создаёт стратегию не-сеточного типа (DCA/Trend/Scalping/Arbitrage).
+
+    Недостающие параметры дополняются дефолтами по типу; характеристики
+    инструмента подтягиваются с биржи. Статус — «Готова».
+    """
+    inst_id = (inst_id or "").strip().upper()
+    name = name or f"{inst_id} {strategy_type}"
+    if GridStrategy.objects.filter(name=name).exists():
+        return {"ok": False, "msg": f"{name}: стратегия уже существует — пропущено."}
+
+    merged = dict(DEFAULT_PARAMS.get(strategy_type, {}))
+    merged.update(params or {})
+    s = GridStrategy.objects.create(
+        name=name, strategy_type=strategy_type, inst_id=inst_id, inst_type=inst_type,
+        td_mode="cash", params=merged, status=StrategyStatus.READY,
+    )
+    try:
+        GridEngine(s).sync_instrument()  # tickSz/lotSz/minSz для округления объёмов
+    except Exception:  # noqa: BLE001 — не критично для не-grid типов
+        pass
+    return {"ok": True, "strategy": s,
+            "msg": f"{name}: создана ({s.get_strategy_type_display()}), params={merged}."}
 
 
 def suggest_params(inst_id, inst_type="SPOT", range_pct=10, order_notional=15) -> dict:
