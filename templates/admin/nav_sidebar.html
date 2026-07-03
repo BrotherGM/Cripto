@@ -29,5 +29,17 @@
     </table>
   </div>
 
+  {# Отдельный блок меню: Документы #}
+  <div class="module" id="grid-docs-nav">
+    <table>
+      <caption>
+        <a href="/admin/grid/document/" class="section" title="Документы">📄 Документы</a>
+      </caption>
+      <tbody>
+        <tr><th scope="row"><a href="/admin/grid/document/">Руководства и инструкции (PDF)</a></th></tr>
+      </tbody>
+    </table>
+  </div>
+
   {% include 'admin/app_list.html' with app_list=available_apps show_changelinks=False %}
 </nav>

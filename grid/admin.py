@@ -414,6 +414,11 @@ class DocumentAdmin(admin.ModelAdmin):
     def has_view_permission(self, request, obj=None):
         return True
 
+    def get_model_perms(self, request):
+        # Пустые права -> модель НЕ показывается в группе Grid (это отдельный
+        # пункт меню). URL страницы при этом остаётся рабочим.
+        return {}
+
     def get_urls(self):
         return [
             path("", self.admin_site.admin_view(self.list_view),
