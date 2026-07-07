@@ -208,6 +208,7 @@ def closed_trades_data(request):
     return JsonResponse({
         "orders": rows,
         "pairs": sorted({r["pair"] for r in rows}),
+        "strategies": sorted({r["strategy"] for r in rows}),
         "states": [{"value": k, "label": v} for k, v in sorted(states.items())],
         "types": [{"value": k, "label": v} for k, v in sorted(types.items())],
     })
@@ -220,6 +221,8 @@ def _filtered_closed_orders(params):
           .select_related("strategy"))
     if params.get("pair"):
         qs = qs.filter(strategy__inst_id=params["pair"])
+    if params.get("strategy"):
+        qs = qs.filter(strategy__name=params["strategy"])
     if params.get("type"):
         qs = qs.filter(strategy__strategy_type=params["type"])
     if params.get("mode"):

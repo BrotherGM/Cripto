@@ -64,6 +64,7 @@
   <div class="panel">
     <div class="controls">
       <div><label>Пара</label><select id="f-pair"><option value="">Все</option></select></div>
+      <div><label>Стратегия</label><select id="f-strategy"><option value="">Все</option></select></div>
       <div><label>Тип стратегии</label><select id="f-type"><option value="">Все</option></select></div>
       <div><label>Сторона</label>
         <select id="f-side"><option value="">Все</option><option value="buy">Покупка</option><option value="sell">Продажа</option></select>
@@ -75,6 +76,7 @@
         <select id="f-group">
           <option value="">Без группировки</option>
           <option value="pair">По паре</option>
+          <option value="strategy">По стратегии</option>
           <option value="type">По типу стратегии</option>
           <option value="mode">По режиму</option>
           <option value="side">По стороне</option>
@@ -111,12 +113,13 @@
   const stCls = s => s==='filled'?'st-filled':'st-canceled';
 
   function filtered(){
-    const p=$('f-pair').value, ty=$('f-type').value, sd=$('f-side').value, st=$('f-state').value,
-          df=$('f-from').value, dt=$('f-to').value;
+    const p=$('f-pair').value, sn=$('f-strategy').value, ty=$('f-type').value,
+          sd=$('f-side').value, st=$('f-state').value, df=$('f-from').value, dt=$('f-to').value;
     let rows = DATA.filter(r => {
       const d = (r.ts||'').slice(0,10);  // YYYY-MM-DD из ISO — сравнение строк корректно
-      return (!p||r.pair===p) && (!ty||r.strategy_type===ty) && (!modeFilter||r.mode===modeFilter) &&
-             (!sd||r.side===sd) && (!st||r.state===st) && (!df||d>=df) && (!dt||d<=dt);
+      return (!p||r.pair===p) && (!sn||r.strategy===sn) && (!ty||r.strategy_type===ty) &&
+             (!modeFilter||r.mode===modeFilter) && (!sd||r.side===sd) && (!st||r.state===st) &&
+             (!df||d>=df) && (!dt||d<=dt);
     });
     rows.sort((a,b)=>{
       let x=a[sortK], y=b[sortK];
@@ -139,7 +142,7 @@
     else if(!g){ body.innerHTML = rows.map(rowHtml).join(''); }
     else {
       const groups = {};
-      rows.forEach(r => { const k = g==='side'?r.side_display:(g==='state'?r.state_display:(g==='type'?(r.type_display||'—'):(g==='mode'?(r.mode_display||'—'):r[g]))); (groups[k]=groups[k]||[]).push(r); });
+      rows.forEach(r => { const k = g==='side'?r.side_display:(g==='state'?r.state_display:(g==='type'?(r.type_display||'—'):(g==='mode'?(r.mode_display||'—'):(g==='strategy'?(r.strategy||'—'):r[g])))); (groups[k]=groups[k]||[]).push(r); });
       let html='';
       Object.keys(groups).sort().forEach(k=>{
         const gr=groups[k], vol=gr.reduce((s,r)=>s+(r.filled||0),0), val=gr.reduce((s,r)=>s+(r.value||0),0);
@@ -158,7 +161,7 @@
   }
   function exportUrl(){
     const q = new URLSearchParams();
-    const map = {pair:'f-pair', type:'f-type', side:'f-side', state:'f-state', from:'f-from', to:'f-to'};
+    const map = {pair:'f-pair', strategy:'f-strategy', type:'f-type', side:'f-side', state:'f-state', from:'f-from', to:'f-to'};
     for(const [k,id] of Object.entries(map)){ const v=$(id).value; if(v) q.set(k,v); }
     if(modeFilter) q.set('mode', modeFilter);
     return '/dashboard/closed-trades.xlsx' + (q.toString()?('?'+q):'');
@@ -170,12 +173,13 @@
       const d = await (await fetch('/dashboard/closed-trades.json')).json();
       DATA = d.orders||[];
       const ps=$('f-pair'); ps.length=1; fill(ps, d.pairs||[], x=>x, x=>x);
+      const ns=$('f-strategy'); ns.length=1; fill(ns, d.strategies||[], x=>x, x=>x);
       const ts=$('f-type'); ts.length=1; fill(ts, d.types||[], x=>x.value, x=>x.label);
       const ss=$('f-state'); ss.length=1; fill(ss, d.states||[], x=>x.value, x=>x.label);
       render();
     }catch(e){ console.error(e); }
   }
-  ['f-pair','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).onchange=render);
+  ['f-pair','f-strategy','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).onchange=render);
   document.querySelectorAll('#modesw button').forEach(btn=>btn.onclick=()=>{
     modeFilter = btn.dataset.m;
     document.querySelectorAll('#modesw button').forEach(b=>b.classList.toggle('active', b===btn));
@@ -184,7 +188,7 @@
   $('f-refresh').onclick=load;
   $('f-export').onclick=()=>{ window.location = exportUrl(); };
   $('f-reset').onclick=()=>{
-    ['f-pair','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).value='');
+    ['f-pair','f-strategy','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).value='');
     modeFilter=''; document.querySelectorAll('#modesw button').forEach(b=>b.classList.toggle('active', b.dataset.m===''));
     render();
   };

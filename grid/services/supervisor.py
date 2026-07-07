@@ -11,7 +11,7 @@ from datetime import datetime, timezone as dt_tz
 
 from django.utils import timezone
 
-from grid.models import GridStrategy, GridOrder, OrderState, StrategyStatus
+from grid.models import GridStrategy, GridOrder, OrderState, StrategyStatus, StrategyLog
 from grid.services import okx_client as okx
 from grid.services import risk
 from grid.services.engines import get_engine
@@ -53,6 +53,10 @@ def tick_strategy(s: GridStrategy):
             get_engine(s).stop()                         # отмена ордеров, статус -> stopped
     except Exception as e:  # noqa: BLE001
         err = str(e)[:300]
+    # Новую ошибку тика сохраняем в «Логи» (дедуп: только если отличается от прошлой),
+    # чтобы причина сбоя не терялась при следующем успешном тике.
+    if err and err != (s.last_error or ""):
+        StrategyLog.objects.create(strategy=s, level="error", message=f"Воркер: {err}")
     _touch(s.pk, last_tick_at=timezone.now(), last_error=err)
 
 

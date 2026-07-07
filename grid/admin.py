@@ -17,7 +17,10 @@ from django.utils.html import format_html, format_html_join
 import json
 import os
 from decimal import Decimal
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone, timedelta
+
+from django.db.models import Q
+from django.utils import timezone as dj_timezone
 
 from django.conf import settings
 from django.http import FileResponse, Http404
@@ -310,6 +313,15 @@ class GridStrategyAdmin(admin.ModelAdmin):
         total = qs.aggregate(t=Sum("position__realized_pnl"))["t"] or Decimal("0")
         response.context_data["earnings_total"] = total
         response.context_data["earnings_count"] = qs.count()
+
+        # Признак «воркер не запущен»: есть running-стратегии, но ни у одной нет
+        # свежего heartbeat -> run_bots не крутится (иначе он бы обновлял last_tick_at).
+        cutoff = dj_timezone.now() - timedelta(seconds=runner.HEARTBEAT_STALE)
+        running_qs = GridStrategy.objects.filter(status=StrategyStatus.RUNNING)
+        running = running_qs.count()
+        fresh = running_qs.filter(last_tick_at__gte=cutoff).count()
+        response.context_data["worker_down"] = running > 0 and fresh == 0
+        response.context_data["worker_running_cnt"] = running
         return response
 
     @admin.display(description="Заработок", ordering="position__realized_pnl")
@@ -361,6 +373,8 @@ class GridStrategyAdmin(admin.ModelAdmin):
         confirm = ("ВНИМАНИЕ! Реальная торговля на НАСТОЯЩИЕ деньги. "
                    "Стратегия будет запущена в режиме РЕАЛ. Продолжить?")
         btn = "color:#fff; padding:6px 12px; border:0; border-radius:6px; cursor:pointer;"
+        logs_url = reverse("admin:grid_strategylog_changelist") + f"?strategy__id__exact={obj.pk}"
+        errs_url = logs_url + "&level__exact=error"
         return format_html(
             '<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">'
             '<input type="submit" name="_start_trading" value="▶️ Запустить торговлю" '
@@ -375,8 +389,12 @@ class GridStrategyAdmin(admin.ModelAdmin):
             'style="background:#7d3c98; {btn}">'
             '<a class="button" href="/dashboard/{pk}/" target="_blank" '
             'style="background:#264b7a; color:#fff;">📈 Открыть графики</a>'
+            '<a class="button" href="{logs_url}" '
+            'style="background:#5d6d7e; color:#fff;">🧾 Логи стратегии</a>'
+            '<a class="button" href="{errs_url}" '
+            'style="background:#8a5a00; color:#fff;">⚠ Ошибки</a>'
             '</div>',
-            btn=btn, confirm=confirm, pk=obj.pk,
+            btn=btn, confirm=confirm, pk=obj.pk, logs_url=logs_url, errs_url=errs_url,
         )
 
     # --- кнопки запуска/остановки на странице объекта ------------------------

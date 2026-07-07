@@ -11,6 +11,19 @@
 {% endblock %}
 
 {% block result_list %}
+  {% if worker_down %}
+  <div style="margin:6px 0 12px; padding:12px 14px; background:#fdecea;
+              border:1px solid #f5c6cb; border-left:5px solid #c0392b; border-radius:8px;
+              font-size:13.5px; color:#7b241c;">
+    <b>⚠ Воркер не запущен.</b> {{ worker_running_cnt }} стратеги(й) в статусе «Запущена», но
+    heartbeat не обновляется — торговые циклы не выполняются (в списке они показаны как «⚠ завис»).
+    Запустите единый воркер, и они снова заработают:
+    <div style="margin-top:6px; font-family:monospace; background:#fff; border:1px solid #f0c8c8;
+                border-radius:6px; padding:6px 9px;">python manage.py run_bots</div>
+    <div style="margin-top:4px; color:#943126;">В Docker — сервис <b>worker</b>
+      (<code>docker compose up -d</code>); на сервере — служба systemd <b>cripto-worker</b>.</div>
+  </div>
+  {% endif %}
   {% if earnings_total is not None %}
   <div style="margin:6px 0 12px; padding:10px 14px; background:#eef3f8;
               border:1px solid #cfd9e3; border-radius:8px; font-size:14px;">
