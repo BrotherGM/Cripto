@@ -1,0 +1,67 @@
+name: 🚀 Deploy to Server
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: 🔑 SSH Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd /app
+            ./update.sh
+
+      - name: 📧 Notify on Success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          payload: |
+            {
+              text: '✅ Cripto deployment successful',
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*✅ Deployment Successful*\n' +
+                          'Repository: ${{ github.repository }}\n' +
+                          'Branch: ${{ github.ref_name }}\n' +
+                          'Commit: ${{ github.sha }}\n' +
+                          'Actor: ${{ github.actor }}'
+                  }
+                }
+              ]
+            }
+
+      - name: 📧 Notify on Failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          payload: |
+            {
+              text: '❌ Cripto deployment failed',
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*❌ Deployment Failed*\n' +
+                          'Repository: ${{ github.repository }}\n' +
+                          'Branch: ${{ github.ref_name }}\n' +
+                          'Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+                  }
+                }
+              ]
+            }
