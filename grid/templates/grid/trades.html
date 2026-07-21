@@ -29,6 +29,16 @@
     .md { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
     .md-demo { background:#2c333d; color:#c3ccd6; }
     .md-live { background:#3a1212; color:#ff8a8a; }
+    /* подсветка суммы по денежному результату сделки */
+    td.res-in  { color:#3fdc7a; background:rgba(63,220,122,.13); font-weight:700; }
+    td.res-out { color:#ff6b6b; background:rgba(255,107,107,.13); font-weight:700; }
+    td.res-none{ color:#8a94a2; }
+    .rb { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .rb-in  { background:#10391f; color:#3fdc7a; }
+    .rb-out { background:#3a2517; color:#ffb27a; }
+    .rb-none{ background:#2c2f36; color:#9aa4b2; }
+    .legend { color:#9aa4b2; font-size:12px; margin:2px 0 10px; }
+    .legend b { font-weight:600; }
     .summary { margin-left:auto; color:#9aa4b2; font-size:12.5px; }
     .wrap { overflow-x:auto; max-height:70vh; overflow-y:auto; }
     table.ct { width:100%; border-collapse:collapse; font-size:13px; }
@@ -88,6 +98,13 @@
       <div><label>&nbsp;</label><button id="f-export" class="export">⬇ Экспорт в Excel</button></div>
       <span class="summary" id="summary"></span>
     </div>
+    <div class="legend">
+      Результат сделки:
+      <span class="rb rb-in">поступление</span> — исполненная продажа (+ к балансу),
+      <span class="rb rb-out">списание</span> — исполненная покупка (− с баланса),
+      <span class="rb rb-none">отменена</span> — не исполнена.
+      Колонка «Сумма» подсвечена тем же цветом.
+    </div>
     <div class="wrap">
       <table class="ct" id="tbl">
         <thead>
@@ -96,7 +113,7 @@
             <th data-k="type_display">Тип</th><th data-k="mode_display">Режим</th><th data-k="side">Сторона</th>
             <th data-k="price" class="num">Цена</th><th data-k="size" class="num">Объём</th>
             <th data-k="filled" class="num">Исполнено</th><th data-k="value" class="num">Сумма</th>
-            <th data-k="state">Статус</th>
+            <th data-k="state">Статус</th><th>Результат</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -129,16 +146,29 @@
     return rows;
   }
   const mdBadge = r => `<span class="md ${r.mode==='live'?'md-live':'md-demo'}">${r.mode_display||'—'}</span>`;
-  const rowHtml = r => `<tr>
+  // Денежный результат сделки: продажа = поступление (+), покупка = списание (−),
+  // отменённая (не исполнена) = нет результата.
+  function resInfo(r){
+    if(r.state!=='filled' || !r.value) return {cls:'res-none', badge:'rb-none', sign:'', word:'отменена'};
+    if(r.side==='sell') return {cls:'res-in', badge:'rb-in', sign:'+', word:'поступление'};
+    return {cls:'res-out', badge:'rb-out', sign:'−', word:'списание'};
+  }
+  const rowHtml = r => {
+    const ri = resInfo(r);
+    const sumTxt = (r.state==='filled' && r.value) ? ri.sign + fmt(r.value) : '—';
+    return `<tr>
       <td>${tstr(r.ts)}</td><td>${r.pair}</td><td>${r.type_display||'—'}</td><td>${mdBadge(r)}</td>
       <td class="${r.side}">${r.side_display}</td>
       <td class="num">${fmt(r.price)}</td><td class="num">${fmt(r.size,6)}</td>
-      <td class="num">${fmt(r.filled,6)}</td><td class="num">${fmt(r.value)}</td>
-      <td><span class="st ${stCls(r.state)}">${r.state_display}</span></td></tr>`;
+      <td class="num">${fmt(r.filled,6)}</td>
+      <td class="num ${ri.cls}">${sumTxt}</td>
+      <td><span class="st ${stCls(r.state)}">${r.state_display}</span></td>
+      <td><span class="rb ${ri.badge}">${ri.word}</span></td></tr>`;
+  };
 
   function render(){
     const rows = filtered(), body = $('tbl').querySelector('tbody'), g = $('f-group').value;
-    if(!rows.length){ body.innerHTML = `<tr class="empty"><td colspan="10">Нет сделок</td></tr>`; }
+    if(!rows.length){ body.innerHTML = `<tr class="empty"><td colspan="11">Нет сделок</td></tr>`; }
     else if(!g){ body.innerHTML = rows.map(rowHtml).join(''); }
     else {
       const groups = {};
@@ -146,8 +176,12 @@
       let html='';
       Object.keys(groups).sort().forEach(k=>{
         const gr=groups[k], vol=gr.reduce((s,r)=>s+(r.filled||0),0), val=gr.reduce((s,r)=>s+(r.value||0),0);
+        const gsell=gr.reduce((s,r)=>s+(r.side==='sell'?(r.value||0):0),0);
+        const gbuy=gr.reduce((s,r)=>s+(r.side==='buy'?(r.value||0):0),0);
+        const gnet=gsell-gbuy, gcls=gnet<0?'res-out':'res-in';
         html += `<tr class="grp"><td colspan="6">▸ ${k} <span style="opacity:.7">(${gr.length})</span></td>`+
-                `<td class="num"></td><td class="num">${fmt(vol,6)}</td><td class="num">${fmt(val)}</td><td></td></tr>`;
+                `<td class="num"></td><td class="num">${fmt(vol,6)}</td><td class="num">${fmt(val)}</td><td></td>`+
+                `<td class="num ${gcls}">${gnet>=0?'+':'−'}${fmt(Math.abs(gnet))}</td></tr>`;
         html += gr.map(rowHtml).join('');
       });
       body.innerHTML = html;
