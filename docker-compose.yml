@@ -12,7 +12,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=${DB_HOST:-localhost}
+      - DB_HOST=172.17.0.1
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -51,7 +51,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=${DB_HOST:-localhost}
+      - DB_HOST=172.17.0.1
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
