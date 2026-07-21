@@ -93,6 +93,24 @@
           <option value="state">По статусу</option>
         </select>
       </div>
+      <div><label>Обновление</label>
+        <select id="f-refresh-interval">
+          <option value="0">Выкл</option>
+          <option value="1000">1 сек</option>
+          <option value="5000" selected>5 сек</option>
+          <option value="10000">10 сек</option>
+          <option value="30000">30 сек</option>
+        </select>
+      </div>
+      <div><label>На странице</label>
+        <select id="f-page-size">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="all">Все</option>
+        </select>
+      </div>
       <div><label>&nbsp;</label><button id="f-refresh">↻ Обновить</button></div>
       <div><label>&nbsp;</label><button id="f-reset">Сбросить фильтры</button></div>
       <div><label>&nbsp;</label><button id="f-export" class="export">⬇ Экспорт в Excel</button></div>
@@ -109,11 +127,11 @@
       <table class="ct" id="tbl">
         <thead>
           <tr>
-            <th data-k="ts">Время</th><th data-k="pair">Пара</th>
+            <th data-k="ts">Время</th><th data-k="strategy">Название</th><th data-k="pair">Пара</th>
             <th data-k="type_display">Тип</th><th data-k="mode_display">Режим</th><th data-k="side">Сторона</th>
             <th data-k="price" class="num">Цена</th><th data-k="size" class="num">Объём</th>
             <th data-k="filled" class="num">Исполнено</th><th data-k="value" class="num">Сумма</th>
-            <th data-k="state">Статус</th><th>Результат</th>
+            <th data-k="state">Статус</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -157,17 +175,18 @@
     const ri = resInfo(r);
     const sumTxt = (r.state==='filled' && r.value) ? ri.sign + fmt(r.value) : '—';
     return `<tr>
-      <td>${tstr(r.ts)}</td><td>${r.pair}</td><td>${r.type_display||'—'}</td><td>${mdBadge(r)}</td>
+      <td>${tstr(r.ts)}</td><td>${r.strategy}</td><td>${r.pair}</td><td>${r.type_display||'—'}</td><td>${mdBadge(r)}</td>
       <td class="${r.side}">${r.side_display}</td>
       <td class="num">${fmt(r.price)}</td><td class="num">${fmt(r.size,6)}</td>
       <td class="num">${fmt(r.filled,6)}</td>
       <td class="num ${ri.cls}">${sumTxt}</td>
-      <td><span class="st ${stCls(r.state)}">${r.state_display}</span></td>
-      <td><span class="rb ${ri.badge}">${ri.word}</span></td></tr>`;
+      <td><span class="st ${stCls(r.state)}">${r.state_display}</span></td></tr>`;
   };
 
   function render(){
     const rows = filtered(), body = $('tbl').querySelector('tbody'), g = $('f-group').value;
+    const tyFilter = $('f-type').value;
+    if(!tyFilter) console.log('Найдено ордеров:', rows.length, '(scalping:', rows.filter(r => r.strategy_type === 'scalping').length + ')');
     if(!rows.length){ body.innerHTML = `<tr class="empty"><td colspan="11">Нет сделок</td></tr>`; }
     else if(!g){ body.innerHTML = rows.map(rowHtml).join(''); }
     else {
@@ -206,28 +225,82 @@
     try{
       const d = await (await fetch('/dashboard/closed-trades.json')).json();
       DATA = d.orders||[];
+      console.log('Загружено ордеров:', DATA.length);
+      console.log('Типы стратегий:', d.types.map(t => t.value));
+      console.log('Scalping ордеров:', DATA.filter(o => o.strategy_type === 'scalping').length);
       const ps=$('f-pair'); ps.length=1; fill(ps, d.pairs||[], x=>x, x=>x);
       const ns=$('f-strategy'); ns.length=1; fill(ns, d.strategies||[], x=>x, x=>x);
       const ts=$('f-type'); ts.length=1; fill(ts, d.types||[], x=>x.value, x=>x.label);
       const ss=$('f-state'); ss.length=1; fill(ss, d.states||[], x=>x.value, x=>x.label);
       render();
-    }catch(e){ console.error(e); }
+    }catch(e){ console.error('Ошибка загрузки:', e); }
   }
-  ['f-pair','f-strategy','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).onchange=render);
+  // --- Пагинация и автообновление ---
+  let pageSize = 20, refreshInterval = 5000, autoRefreshTimer = null;
+
+  function applyPagination(rows) {
+    const ps = parseInt($('f-page-size').value);
+    if(ps === 'all' || ps > rows.length) return rows;
+    const limit = isNaN(ps) ? rows.length : ps;
+    return rows.slice(0, limit);
+  }
+
+  const origRender = render;
+  render = function() {
+    const rows = filtered();
+    const displayRows = applyPagination(rows);
+    const body = $('tbl').querySelector('tbody'), g = $('f-group').value;
+    if(!displayRows.length){ body.innerHTML = `<tr class="empty"><td colspan="11">Нет сделок</td></tr>`; }
+    else if(!g){ body.innerHTML = displayRows.map(rowHtml).join(''); }
+    else {
+      const groups = {};
+      displayRows.forEach(r => { const k = g==='side'?r.side_display:(g==='state'?r.state_display:(g==='type'?(r.type_display||'—'):(g==='mode'?(r.mode_display||'—'):(g==='strategy'?(r.strategy||'—'):r[g])))); (groups[k]=groups[k]||[]).push(r); });
+      let html='';
+      Object.keys(groups).sort().forEach(k=>{
+        const gr=groups[k], vol=gr.reduce((s,r)=>s+(r.filled||0),0), val=gr.reduce((s,r)=>s+(r.value||0),0);
+        const gsell=gr.reduce((s,r)=>s+(r.side==='sell'?(r.value||0):0),0);
+        const gbuy=gr.reduce((s,r)=>s+(r.side==='buy'?(r.value||0):0),0);
+        const gnet=gsell-gbuy, gcls=gnet<0?'res-out':'res-in';
+        html += `<tr class="grp"><td colspan="6">▸ ${k} <span style="opacity:.7">(${gr.length})</span></td>`+`<td class="num"></td><td class="num">${fmt(vol,6)}</td><td class="num">${fmt(val)}</td><td></td><td class="num ${gcls}">${gnet>=0?'+':'−'}${fmt(Math.abs(gnet))}</td></tr>`;
+        html += gr.map(rowHtml).join('');
+      });
+      body.innerHTML = html;
+    }
+    const vol=displayRows.reduce((s,r)=>s+(r.filled||0),0), val=displayRows.reduce((s,r)=>s+(r.value||0),0);
+    const sell=displayRows.reduce((s,r)=>s+(r.side==='sell'?(r.value||0):0),0);
+    const buy=displayRows.reduce((s,r)=>s+(r.side==='buy'?(r.value||0):0),0);
+    const earn=sell-buy;
+    $('summary').innerHTML = `строк: ${displayRows.length}/${rows.length} · Σ объём: ${fmt(vol,4)} · Σ сумма: ${fmt(val)} USDT · заработок (нетто): <span class="earn ${earn<0?'neg':''}">${earn>=0?'+':''}${fmt(earn)} USDT</span>`;
+  };
+
+  ['f-pair','f-strategy','f-type','f-side','f-state','f-group','f-from','f-to','f-page-size'].forEach(id=>$(id).onchange=render);
   document.querySelectorAll('#modesw button').forEach(btn=>btn.onclick=()=>{
     modeFilter = btn.dataset.m;
     document.querySelectorAll('#modesw button').forEach(b=>b.classList.toggle('active', b===btn));
     render();
   });
+
+  $('f-refresh-interval').onchange = ()=>{
+    const val = parseInt($('f-refresh-interval').value);
+    if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+    refreshInterval = val;
+    if(val > 0) autoRefreshTimer = setInterval(load, val);
+  };
+
   $('f-refresh').onclick=load;
   $('f-export').onclick=()=>{ window.location = exportUrl(); };
   $('f-reset').onclick=()=>{
     ['f-pair','f-strategy','f-type','f-side','f-state','f-group','f-from','f-to'].forEach(id=>$(id).value='');
+    $('f-page-size').value='20'; $('f-refresh-interval').value='5000';
     modeFilter=''; document.querySelectorAll('#modesw button').forEach(b=>b.classList.toggle('active', b.dataset.m===''));
+    if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+    autoRefreshTimer = setInterval(load, 5000);
     render();
   };
   $('tbl').querySelectorAll('th').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortK===k) sortDir*=-1; else {sortK=k; sortDir=1;} render(); });
+
   load();
+  autoRefreshTimer = setInterval(load, refreshInterval);
 })();
 </script>
 </body>

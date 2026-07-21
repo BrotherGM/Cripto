@@ -30,7 +30,7 @@ from grid.forms import QuickStrategyForm
 from grid.models import (
     GridStrategy, GridLevel, GridOrder, Trade, Position, StrategyLog, Instrument,
     Document, Service, RiskSettings, EquitySnapshot, GridType, StrategyType,
-    StrategyStatus,
+    StrategyStatus, WorkerStatus,
 )
 from grid.services import okx_client as okx
 from grid.services import risk
@@ -169,7 +169,7 @@ class GridStrategyAdmin(admin.ModelAdmin):
     search_fields = ("name", "inst_id")
     inlines = [PositionInline, GridLevelInline]  # StrategyLogInline скрыт (логи доступны через кнопки)
     readonly_fields = (
-        "trading_controls", "params_help", "risk_check",
+        "trading_controls", "params_help", "risk_check", "params_display",
         "tick_sz", "lot_sz", "min_sz", "is_demo",
         "worker_state", "desired_state", "last_tick_at", "last_error",
         "created_at", "updated_at",
@@ -180,8 +180,8 @@ class GridStrategyAdmin(admin.ModelAdmin):
                        "td_mode", "leverage", "status", "risk_check", "trading_controls"),
         }),
         ("Параметры стратегии (DCA / Trend / Scalping / Arbitrage)", {
-            "fields": ("params", "params_help"),
-            "description": "JSON-параметры для не-сеточных типов. Схему см. ниже.",
+            "fields": ("params", "params_display", "params_help"),
+            "description": "JSON-параметры для не-сеточных типов. Для Scalping: кнопка обновит entry_price текущей ценой с OKX.",
         }),
         ("Диапазон сетки (только для типа «Сетка»)", {
             "fields": ("p_max", "p_min", "levels", "grid_type", "order_size"),
@@ -291,13 +291,8 @@ class GridStrategyAdmin(admin.ModelAdmin):
 
         if obj.desired_state == "run":
             # Стратегия запущена — показываем кнопку "Остановить"
-            url = reverse('admin:grid_gridstrategy_change', args=[obj.pk])
             return format_html(
-                '<a href="javascript:void(0)" onclick="'
-                'var pk={}; '
-                'fetch(\'/admin/grid/gridstrategy/\' + pk + \"/trading-toggle/\", '
-                '{{method:\"POST\", headers:{{\"X-CSRFToken\":getCookie(\"csrftoken\")}}}}) '
-                '.then(()=>location.reload())" '
+                '<a href="javascript:void(0)" onclick="toggleTrading({})" '
                 'style="background:#c00; color:white; padding:4px 8px; '
                 'border-radius:3px; cursor:pointer; text-decoration:none; '
                 'display:inline-block; font-weight:bold">⏹ Стоп</a>',
@@ -305,11 +300,7 @@ class GridStrategyAdmin(admin.ModelAdmin):
         else:
             # Стратегия остановлена — показываем кнопку "Запустить"
             return format_html(
-                '<a href="javascript:void(0)" onclick="'
-                'var pk={}; '
-                'fetch(\'/admin/grid/gridstrategy/\' + pk + \"/trading-toggle/\", '
-                '{{method:\"POST\", headers:{{\"X-CSRFToken\":getCookie(\"csrftoken\")}}}}) '
-                '.then(()=>location.reload())" '
+                '<a href="javascript:void(0)" onclick="toggleTrading({})" '
                 'style="background:#0a0; color:white; padding:4px 8px; '
                 'border-radius:3px; cursor:pointer; text-decoration:none; '
                 'display:inline-block; font-weight:bold">▶ Пуск</a>',
@@ -518,11 +509,27 @@ class GridStrategyAdmin(admin.ModelAdmin):
 
     # --- быстрое создание стратегии по паре ----------------------------------
     def get_urls(self):
+        from django.urls import path as django_path
         custom = [
             path("quick-create/", self.admin_site.admin_view(self.quick_create_view),
                  name="grid_gridstrategy_quick_create"),
             path("export-xlsx/", self.admin_site.admin_view(self.export_xlsx_view),
                  name="grid_gridstrategy_export_xlsx"),
+            django_path(
+                "<int:pk>/trading-toggle/",
+                self.admin_site.admin_view(self.trading_toggle_view),
+                name="grid_gridstrategy_trading_toggle",
+            ),
+            django_path(
+                "<int:pk>/update-entry-price/",
+                self.admin_site.admin_view(self.update_entry_price_view),
+                name="grid_gridstrategy_update_entry_price",
+            ),
+            django_path(
+                "<int:pk>/save-scalping-params/",
+                self.admin_site.admin_view(self.save_scalping_params_view),
+                name="grid_gridstrategy_save_scalping_params",
+            ),
         ]
         return custom + super().get_urls()
 
@@ -640,6 +647,137 @@ class GridStrategyAdmin(admin.ModelAdmin):
             except Exception as e:  # noqa: BLE001
                 self.message_user(request, f"[{s.name}] ошибка: {e}", messages.ERROR)
 
+    @admin.display(description="Параметры")
+    def params_display(self, obj):
+        """Красивый вывод параметров JSON с возможностью редактирования для Scalping."""
+        if not obj or not obj.params:
+            return "—"
+
+        params = obj.params or {}
+
+        # Для Scalping стратегии выводим интерактивный блок
+        if obj.strategy_type == 'scalping':
+            stop_pct = params.get('stop_pct', 0.5)
+            target_pct = params.get('target_pct', 0.3)
+            order_amount = params.get('order_amount', 50)
+            entry_price = params.get('_state', {}).get('entry_price', 0)
+
+            html = f'''
+            <div id="scalping-params-block-{obj.pk}" class="scalping-params-block">
+                <!-- Display mode (default) -->
+                <div id="scalping-params-display-{obj.pk}">
+                    <div class="params-display-row">
+                        <label>stop_pct:</label>
+                        <div class="value">{stop_pct}</div>
+                    </div>
+                    <div class="params-display-row">
+                        <label>target_pct:</label>
+                        <div class="value">{target_pct}</div>
+                    </div>
+                    <div class="params-display-row">
+                        <label>order_amount:</label>
+                        <div class="value">{order_amount}</div>
+                    </div>
+                    <div class="params-display-row">
+                        <label>entry_price:</label>
+                        <div class="value">{entry_price}</div>
+                    </div>
+                    <div class="params-buttons">
+                        <button type="button" class="params-button primary" onclick="toggleEditMode({obj.pk})">✏️ Редактировать</button>
+                        <button type="button" class="params-button secondary" onclick="updateEntryPrice({obj.pk})">🔄 Цена OKX</button>
+                    </div>
+                </div>
+
+                <!-- Edit mode (hidden by default) -->
+                <div id="scalping-params-edit-{obj.pk}" style="display:none;">
+                    <div class="params-row">
+                        <label for="stop_pct-{obj.pk}">stop_pct:</label>
+                        <input type="number" id="stop_pct-{obj.pk}" value="{stop_pct}" step="0.01" min="0" max="100">
+                    </div>
+                    <div class="params-row">
+                        <label for="target_pct-{obj.pk}">target_pct:</label>
+                        <input type="number" id="target_pct-{obj.pk}" value="{target_pct}" step="0.01" min="0" max="100">
+                    </div>
+                    <div class="params-row">
+                        <label for="order_amount-{obj.pk}">order_amount:</label>
+                        <input type="number" id="order_amount-{obj.pk}" value="{order_amount}" step="0.01" min="0">
+                    </div>
+                    <div class="params-row">
+                        <label for="entry_price-{obj.pk}">entry_price:</label>
+                        <input type="number" id="entry_price-{obj.pk}" value="{entry_price}" step="0.01" min="0">
+                    </div>
+                    <div class="params-buttons">
+                        <button type="button" class="params-button primary" onclick="saveScalpingParams({obj.pk})">💾 Сохранить</button>
+                        <button type="button" class="params-button secondary" onclick="toggleEditMode({obj.pk})">✕ Отмена</button>
+                    </div>
+                </div>
+            </div>
+            '''
+            return format_html(html)
+
+        # Для остальных типов просто выводим текст
+        lines = []
+        for key in ['stop_pct', 'target_pct', 'order_amount']:
+            val = params.get(key)
+            if val is not None:
+                lines.append(f"<b>{key}:</b> {val}")
+
+        entry = params.get('_state', {}).get('entry_price')
+        if entry:
+            lines.append(f"<b>entry_price:</b> {entry}")
+
+        return format_html('<br>'.join(lines))
+
+    def save_scalping_params_view(self, request, pk):
+        """Сохраняет параметры Scalping."""
+        from django.http import JsonResponse
+        import json
+        try:
+            s = GridStrategy.objects.get(pk=pk, strategy_type='scalping')
+            data = json.loads(request.body)
+
+            # Обновляем params
+            params = s.params or {}
+            params['stop_pct'] = float(data.get('stop_pct', params.get('stop_pct', 0.5)))
+            params['target_pct'] = float(data.get('target_pct', params.get('target_pct', 0.3)))
+            params['order_amount'] = float(data.get('order_amount', params.get('order_amount', 50)))
+            if '_state' not in params:
+                params['_state'] = {}
+            params['_state']['entry_price'] = float(data.get('entry_price', params.get('_state', {}).get('entry_price', 0)))
+
+            s.params = params
+            s.save(update_fields=["params"])
+
+            return JsonResponse({
+                "ok": True,
+                "params": params
+            })
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=400)
+
+    def update_entry_price_view(self, request, pk):
+        """Обновляет entry_price из текущей цены OKX."""
+        from django.http import JsonResponse
+        try:
+            s = GridStrategy.objects.get(pk=pk, strategy_type='scalping')
+            current_price = okx.get_last_price(s.inst_id)
+
+            # Обновляем params
+            params = s.params or {}
+            if '_state' not in params:
+                params['_state'] = {}
+            params['_state']['entry_price'] = float(current_price)
+            s.params = params
+            s.save(update_fields=["params"])
+
+            return JsonResponse({
+                "ok": True,
+                "entry_price": float(current_price),
+                "inst_id": s.inst_id
+            })
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=400)
+
     def trading_toggle_view(self, request, pk):
         """Переключает desired_state стратегии (run ↔ stop)."""
         from django.http import JsonResponse
@@ -650,17 +788,6 @@ class GridStrategyAdmin(admin.ModelAdmin):
             return JsonResponse({"ok": True, "desired_state": s.desired_state})
         except Exception as e:
             return JsonResponse({"ok": False, "error": str(e)}, status=400)
-
-    def get_urls(self):
-        from django.urls import path as django_path
-        urls = [
-            django_path(
-                "<int:pk>/trading-toggle/",
-                self.admin_site.admin_view(self.trading_toggle_view),
-                name="grid_gridstrategy_trading_toggle",
-            ),
-        ]
-        return urls + super().get_urls()
 
 
 @admin.register(GridLevel)
@@ -897,6 +1024,121 @@ class EquitySnapshotAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+# =========================================================================
+#  WorkerStatus — мониторинг воркера в специальной группе админки
+# =========================================================================
+@admin.register(WorkerStatus)
+class WorkerStatusAdmin(admin.ModelAdmin):
+    """Раздел мониторинга статуса воркера с информацией о его работе."""
+
+    list_display = (
+        "worker_status_display", "last_heartbeat", "strategies_info",
+        "cycles_info", "error_display"
+    )
+    list_filter = ("is_running",)
+    readonly_fields = (
+        "worker_status_display", "last_heartbeat", "strategies_count",
+        "running_count", "stopped_count", "orders_processed", "cycles_completed",
+        "error_display", "is_running"
+    )
+    fieldsets = (
+        ("🟢 Статус воркера", {
+            "fields": ("worker_status_display", "is_running", "last_heartbeat")
+        }),
+        ("📊 Статистика стратегий", {
+            "fields": ("strategies_count", "running_count", "stopped_count")
+        }),
+        ("⚙️ Статистика обработки", {
+            "fields": ("orders_processed", "cycles_completed")
+        }),
+        ("🚨 Ошибки", {
+            "fields": ("error_display",),
+            "classes": ("collapse",)
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(pk=1)
+
+    @admin.display(description="Статус")
+    def worker_status_display(self, obj):
+        """Отображение статуса воркера с иконкой."""
+        if obj.is_running:
+            return format_html(
+                '<span style="color:#0a0; font-weight:bold; font-size:14px;">🟢 Воркер работает</span>'
+            )
+        else:
+            return format_html(
+                '<span style="color:#c00; font-weight:bold; font-size:14px;">🔴 Воркер остановлен</span>'
+            )
+
+    @admin.display(description="Последний heartbeat")
+    def last_heartbeat(self, obj):
+        """Время последнего heartbeat с расчетом прошедшего времени."""
+        from datetime import datetime, timezone as dt_timezone, timedelta
+
+        elapsed = (datetime.now(dt_timezone.utc) - obj.last_heartbeat).total_seconds()
+        elapsed_str = f"{elapsed:.0f}"
+
+        if elapsed < 30:
+            return format_html(
+                '<span style="color:#0a0; font-weight:bold;">✓ {}с назад</span>',
+                elapsed_str
+            )
+        elif elapsed < 120:
+            return format_html(
+                '<span style="color:#fa0; font-weight:bold;">⚠ {}с назад</span>',
+                elapsed_str
+            )
+        else:
+            return format_html(
+                '<span style="color:#c00; font-weight:bold;">✗ {}с назад</span>',
+                elapsed_str
+            )
+
+    @admin.display(description="Стратегии")
+    def strategies_info(self, obj):
+        """Информация о количестве стратегий."""
+        return format_html(
+            '<span style="font-weight:bold;">Всего: {}</span><br/>'
+            '<span style="color:#0a0;">▶ Запущено: {}</span><br/>'
+            '<span style="color:#666;">⏸ Остановлено: {}</span>',
+            obj.strategies_count, obj.running_count, obj.stopped_count
+        )
+
+    @admin.display(description="Обработано")
+    def cycles_info(self, obj):
+        """Информация о циклах и ордерах."""
+        cycles_str = f"{obj.cycles_completed:,}".replace(',', ' ')
+        orders_str = f"{obj.orders_processed:,}".replace(',', ' ')
+        return format_html(
+            'Циклов: <b>{}</b><br/>Ордеров: <b>{}</b>',
+            cycles_str, orders_str
+        )
+
+    @admin.display(description="Последняя ошибка")
+    def error_display(self, obj):
+        """Отображение последней ошибки."""
+        if obj.last_error:
+            return format_html(
+                '<div style="background:#fdd; padding:8px; border-radius:4px; '
+                'border:1px solid #faa; font-family:monospace; font-size:12px; '
+                'max-width:500px; overflow-x:auto;">{}</div>',
+                obj.last_error[:500]
+            )
+        return format_html('<span style="color:#0a0;">✓ Ошибок не обнаружено</span>')
 
 
 # Заголовок админки отражает режим: демо или РЕАЛЬНАЯ торговля (боевые ключи).

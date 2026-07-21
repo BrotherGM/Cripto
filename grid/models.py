@@ -424,7 +424,10 @@ class RiskSettings(models.Model):
     @classmethod
     def load(cls):
         # Удаляем дубли (синглтон должен быть только один)
-        cls.objects.exclude(pk=1).delete()
+        try:
+            cls.objects.exclude(pk=1).delete()
+        except Exception:
+            pass  # Таблица может ещё не существовать или быть в состоянии восстановления
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
@@ -442,3 +445,24 @@ class EquitySnapshot(models.Model):
 
     def __str__(self):
         return f"{self.ts:%Y-%m-%d %H:%M} — {self.equity}"
+
+
+class WorkerStatus(models.Model):
+    """Статус воркера (heartbeat и статистика)."""
+
+    last_heartbeat = models.DateTimeField("Последний heartbeat", auto_now=True)
+    strategies_count = models.IntegerField("Количество стратегий", default=0)
+    running_count = models.IntegerField("Запущено стратегий", default=0)
+    stopped_count = models.IntegerField("Остановлено стратегий", default=0)
+    orders_processed = models.IntegerField("Ордеров обработано", default=0)
+    cycles_completed = models.BigIntegerField("Циклов завершено", default=0)
+    last_error = models.TextField("Последняя ошибка", blank=True, default="")
+    is_running = models.BooleanField("Воркер работает", default=False)
+
+    class Meta:
+        verbose_name = "Статус воркера"
+        verbose_name_plural = "Статус воркера"
+
+    def __str__(self):
+        status = "🟢 Работает" if self.is_running else "🔴 Остановлен"
+        return f"{status} — {self.strategies_count} стратегий ({self.running_count} работает)"

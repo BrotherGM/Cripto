@@ -53,5 +53,21 @@
       }
       return cookieValue;
     }
+
+    function toggleTrading(pk) {
+      fetch('/admin/grid/gridstrategy/' + pk + '/trading-toggle/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) location.reload();
+        else alert('Ошибка: ' + data.error);
+      })
+      .catch(e => alert('Ошибка запроса: ' + e));
+    }
   </script>
 {% endblock %}

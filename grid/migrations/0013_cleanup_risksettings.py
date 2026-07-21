@@ -1,14 +1,19 @@
 from django.db import migrations
+from django.db.utils import ProgrammingError
 
 def cleanup_risksettings(apps, schema_editor):
     """Оставляет только одну RiskSettings запись."""
-    RiskSettings = apps.get_model('grid', 'RiskSettings')
-    all_rs = RiskSettings.objects.all()
-    
-    if all_rs.count() > 1:
-        first = all_rs.first()
-        to_delete = all_rs.exclude(pk=first.pk)
-        to_delete.delete()
+    try:
+        RiskSettings = apps.get_model('grid', 'RiskSettings')
+        all_rs = RiskSettings.objects.all()
+
+        if all_rs.count() > 1:
+            first = all_rs.first()
+            to_delete = all_rs.exclude(pk=first.pk)
+            to_delete.delete()
+    except (ProgrammingError, Exception):
+        # Таблица еще не создана, пропускаем
+        pass
 
 def reverse_cleanup(apps, schema_editor):
     pass

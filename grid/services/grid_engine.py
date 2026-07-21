@@ -345,7 +345,7 @@ class GridEngine:
     # --- 4.2 аварийный выход (stop-loss) -------------------------------------
     def check_stop_loss(self, current_price: Decimal) -> bool:
         """Если цена пробила нижнюю границу — аварийный выход."""
-        if not self.s.stop_loss_enabled:
+        if not self.s.stop_loss_enabled or self.s.effective_stop_loss is None:
             return False
         if Decimal(current_price) > self.s.effective_stop_loss:
             return False

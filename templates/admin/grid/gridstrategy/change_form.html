@@ -1,0 +1,173 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <style>
+    .scalping-params-block {
+      background: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 15px;
+      margin: 10px 0;
+    }
+    .scalping-params-block.edit-mode {
+      background: #fffef0;
+      border: 1px solid #e8d4b8;
+    }
+    .params-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 10px;
+    }
+    .params-row label {
+      font-weight: 500;
+      color: #333;
+      font-size: 13px;
+    }
+    .params-row input {
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      font-size: 13px;
+      font-family: monospace;
+    }
+    .params-row input:focus {
+      outline: none;
+      border-color: #417690;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .params-display-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .params-display-row label {
+      font-weight: 500;
+      color: #333;
+    }
+    .params-display-row .value {
+      color: #666;
+      font-family: monospace;
+      padding: 4px 8px;
+    }
+    .params-buttons {
+      margin-top: 15px;
+      display: flex;
+      gap: 8px;
+    }
+    .params-button {
+      padding: 6px 12px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .params-button:hover {
+      background: #f0f0f0;
+      border-color: #999;
+    }
+    .params-button.primary {
+      background: #417690;
+      color: white;
+      border-color: #417690;
+    }
+    .params-button.primary:hover {
+      background: #36596f;
+    }
+    .params-button.secondary {
+      background: #f5f5f5;
+      border-color: #ddd;
+    }
+    .params-button.secondary:hover {
+      background: #eee;
+    }
+  </style>
+  <script>
+    function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+
+    function toggleEditMode(pk) {
+      const block = document.getElementById('scalping-params-block-' + pk);
+      const displaySection = document.getElementById('scalping-params-display-' + pk);
+      const editSection = document.getElementById('scalping-params-edit-' + pk);
+
+      if (block.classList.contains('edit-mode')) {
+        block.classList.remove('edit-mode');
+        displaySection.style.display = 'block';
+        editSection.style.display = 'none';
+      } else {
+        block.classList.add('edit-mode');
+        displaySection.style.display = 'none';
+        editSection.style.display = 'block';
+      }
+    }
+
+    function saveScalpingParams(pk) {
+      const stopPct = document.getElementById('stop_pct-' + pk).value;
+      const targetPct = document.getElementById('target_pct-' + pk).value;
+      const orderAmount = document.getElementById('order_amount-' + pk).value;
+      const entryPrice = document.getElementById('entry_price-' + pk).value;
+
+      fetch('/admin/grid/gridstrategy/' + pk + '/save-scalping-params/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          stop_pct: stopPct,
+          target_pct: targetPct,
+          order_amount: orderAmount,
+          entry_price: entryPrice
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          location.reload();
+        } else {
+          alert('Ошибка: ' + data.error);
+        }
+      })
+      .catch(e => alert('Ошибка запроса: ' + e));
+    }
+
+    function updateEntryPrice(pk) {
+      fetch('/admin/grid/gridstrategy/' + pk + '/update-entry-price/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          location.reload();
+        } else {
+          alert('Ошибка: ' + data.error);
+        }
+      })
+      .catch(e => alert('Ошибка запроса: ' + e));
+    }
+  </script>
+{% endblock extrahead %}

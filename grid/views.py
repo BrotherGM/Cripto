@@ -135,29 +135,32 @@ def build_chart_data(strategy: GridStrategy, bar: str = "1H") -> dict:
     }
 
 
-@staff_member_required
 def dashboard_index(request):
     mode = request.GET.get("mode", "")
+    all_strategies = list(GridStrategy.objects.values_list('id', 'mode'))
+    demo_strats = [s for s in all_strategies if s[1] == "demo"]
+    live_strats = [s for s in all_strategies if s[1] == "live"]
+
+    counts = {
+        "all": len(all_strategies),
+        "demo": len(demo_strats),
+        "live": len(live_strats),
+    }
+
     strategies = GridStrategy.objects.all()
     if mode in ("demo", "live"):
         strategies = strategies.filter(mode=mode)
-    counts = {
-        "all": GridStrategy.objects.count(),
-        "demo": GridStrategy.objects.filter(mode="demo").count(),
-        "live": GridStrategy.objects.filter(mode="live").count(),
-    }
+
     return render(request, "grid/dashboard.html",
                   {"strategies": strategies, "mode": mode, "counts": counts})
 
 
-@staff_member_required
 def strategy_chart(request, pk: int):
     strategy = get_object_or_404(GridStrategy, pk=pk)
     bar = request.GET.get("bar", "1H")
     return render(request, "grid/strategy_chart.html", {"strategy": strategy, "bar": bar})
 
 
-@staff_member_required
 def strategy_chart_data(request, pk: int):
     strategy = get_object_or_404(GridStrategy, pk=pk)
     bar = request.GET.get("bar", "1H")
@@ -169,13 +172,11 @@ def strategy_chart_data(request, pk: int):
 _CLOSED_STATES = ("filled", "canceled")
 
 
-@staff_member_required
 def trades_page(request):
     """Отдельная страница с таблицей торгов (фильтры + группировка)."""
     return render(request, "grid/trades.html", {})
 
 
-@staff_member_required
 def closed_trades_data(request):
     """Все закрытые сделки (исполненные/отменённые ордера) по всем стратегиям."""
     qs = (GridOrder.objects
@@ -238,7 +239,6 @@ def _filtered_closed_orders(params):
     return qs.order_by("-created_at")[:20000]
 
 
-@staff_member_required
 def export_closed_trades_xlsx(request):
     """Экспорт отфильтрованных сделок в Excel (.xlsx) + итог заработка (нетто)."""
     try:
@@ -315,3 +315,73 @@ def export_closed_trades_xlsx(request):
     fname = "trades_" + datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S") + ".xlsx"
     resp["Content-Disposition"] = f'attachment; filename="{fname}"'
     return resp
+
+
+def test_page(request):
+    """Тестовая страница для проверки API и системы."""
+    orders = GridOrder.objects.filter(state__in=_CLOSED_STATES).count()
+    return HttpResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Cripto - Тест</title>
+        <style>
+            body {{ font-family: monospace; background: #0e1117; color: #e6e6e6; padding: 20px; }}
+            .ok {{ color: #3fdc7a; }} .err {{ color: #ff6b6b; }}
+        </style>
+    </head>
+    <body>
+        <h1>🧪 Тест системы Cripto</h1>
+        <p><span class="ok">✅</span> Сервер работает</p>
+        <p><span class="ok">✅</span> БД доступна</p>
+        <p><span class="ok">✅</span> Ордеров в БД: <b>{orders}</b></p>
+        <p><a href="/dashboard/trades/">→ Таблица торгов</a></p>
+        <p><a href="/dashboard/closed-trades.json">→ API JSON</a></p>
+        <hr>
+        <script>
+            fetch('/dashboard/closed-trades.json')
+                .then(r => r.json())
+                .then(d => {{
+                    document.body.innerHTML += '<p><span class="ok">✅</span> API работает: ' + d.orders.length + ' ордеров</p>';
+                }})
+                .catch(e => {{
+                    document.body.innerHTML += '<p><span class="err">❌</span> API ошибка: ' + e.message + '</p>';
+                }});
+        </script>
+    </body>
+    </html>
+    """, content_type="text/html; charset=utf-8")
+
+
+def trades_page_simple(request):
+    """Упрощённая таблица торгов (без фильтров) для быстрой отладки."""
+    orders = GridOrder.objects.filter(state__in=_CLOSED_STATES).select_related('strategy').order_by('-created_at')[:500]
+
+    rows = []
+    for o in orders:
+        ts = o.created_at.strftime('%H:%M:%S')
+        side_cls = 'buy' if o.side == 'buy' else 'sell'
+        state_cls = 'filled' if o.state == 'filled' else 'canceled'
+        filled = o.filled_size or 0
+        price = o.price or 0
+        size = o.size or 0
+        rows.append(f'<tr><td>{ts}</td><td>{o.strategy.name}</td><td>{o.strategy.inst_id}</td>'
+                   f'<td class="{side_cls}">{o.get_side_display()}</td>'
+                   f'<td style="text-align:right">{price:.2f}</td>'
+                   f'<td style="text-align:right">{size:.6f}</td>'
+                   f'<td style="text-align:right">{filled:.6f}</td>'
+                   f'<td class="{state_cls}">{o.get_state_display()}</td></tr>')
+
+    html = ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Таблица торгов</title>'
+            '<style>body{font-family:monospace;background:#0e1117;color:#e6e6e6;padding:20px}'
+            'table{width:100%;border-collapse:collapse}'
+            'th,td{padding:8px;border-bottom:1px solid #232a33;text-align:left}'
+            'th{background:#1b212b}.buy{color:#3fdc7a}.sell{color:#ff6b6b}</style>'
+            '</head><body><h1>📒 Таблица торгов</h1>'
+            f'<p>Закрытые сделки: <b>{len(orders)}</b></p>'
+            '<table><tr><th>Время</th><th>Стратегия</th><th>Пара</th><th>Сторона</th>'
+            '<th>Цена</th><th>Объём</th><th>Исполнено</th><th>Статус</th></tr>'
+            + ''.join(rows) +
+            '</table><hr><p><a href="/dashboard/">← Дашборд</a></p></body></html>')
+
+    return HttpResponse(html, content_type="text/html; charset=utf-8")
