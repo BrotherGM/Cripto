@@ -176,3 +176,7 @@ OKX_LIVE = {
 
 TRADING_MODE = os.getenv('TRADING_MODE', 'demo').lower()  # 'demo' | 'live'
 OKX = OKX_LIVE if TRADING_MODE == 'live' else OKX_DEMO
+
+# Увеличивают лимит параметров для админ-форм со множеством inlined объектов
+# (напр. стратегия со 499+ ордерами).
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
