@@ -423,6 +423,8 @@ class RiskSettings(models.Model):
 
     @classmethod
     def load(cls):
+        # Удаляем дубли (синглтон должен быть только один)
+        cls.objects.exclude(pk=1).delete()
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
