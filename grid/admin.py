@@ -7,6 +7,7 @@
     * размещение начальной сетки
     * штатная остановка (отмена всех ордеров)
 """
+from django import forms
 from django.contrib import admin, messages
 from django.db.models import Sum
 from django.http import HttpResponseRedirect
@@ -136,8 +137,29 @@ def _strategies_to_xlsx(queryset):
     return resp
 
 
+class GridStrategyAdminForm(forms.ModelForm):
+    """Форма для GridStrategyAdmin — валидирует p_max/p_min только для grid типов."""
+    class Meta:
+        model = GridStrategy
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        strategy_type = cleaned_data.get('strategy_type')
+        p_max = cleaned_data.get('p_max')
+        p_min = cleaned_data.get('p_min')
+
+        # p_max/p_min требуются только для grid типов
+        if strategy_type == StrategyType.GRID:
+            if not p_max or not p_min:
+                raise forms.ValidationError(
+                    "Для типа «Сетка» требуются верхняя и нижняя цены (Pmax, Pmin).")
+        return cleaned_data
+
+
 @admin.register(GridStrategy)
 class GridStrategyAdmin(admin.ModelAdmin):
+    form = GridStrategyAdminForm
     change_list_template = "admin/grid/gridstrategy/change_list.html"
     list_display = (
         "name", "type_badge", "mode_badge", "inst_id", "status_badge", "runner_badge",
@@ -145,7 +167,7 @@ class GridStrategyAdmin(admin.ModelAdmin):
     )
     list_filter = ("mode", "strategy_type", "status", "inst_type")
     search_fields = ("name", "inst_id")
-    inlines = [PositionInline, GridLevelInline, StrategyLogInline]
+    inlines = [PositionInline, GridLevelInline]  # StrategyLogInline скрыт (логи доступны через кнопки)
     readonly_fields = (
         "trading_controls", "params_help", "risk_check",
         "tick_sz", "lot_sz", "min_sz", "is_demo",
