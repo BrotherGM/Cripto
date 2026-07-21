@@ -8,8 +8,6 @@ services:
     network_mode: "host"
     environment:
       - DB_HOST=localhost
-    # gunicorn слушает порт 8077 прямо на хосте
-    command: gunicorn cripto.wsgi:application --bind 0.0.0.0:8077 --workers 3 --timeout 120
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped

@@ -30,4 +30,4 @@ RUN python manage.py collectstatic --noinput --settings=cripto.settings || true
 
 # Точка входа: применить миграции и запустить gunicorn
 ENTRYPOINT ["sh", "-c"]
-CMD ["python manage.py migrate --noinput && gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 cripto.wsgi:application"]
+CMD ["python manage.py migrate --noinput && gunicorn --bind 0.0.0.0:8077 --workers 4 --timeout 120 cripto.wsgi:application"]
