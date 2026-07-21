@@ -10,21 +10,38 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: ✅ Check Secrets
+        run: |
+          if [ -z "${{ secrets.SERVER_HOST }}" ]; then
+            echo "❌ Ошибка: SERVER_HOST secret не настроен"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SERVER_USER }}" ]; then
+            echo "❌ Ошибка: SERVER_USER secret не настроен"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SERVER_SSH_KEY }}" ]; then
+            echo "❌ Ошибка: SERVER_SSH_KEY secret не настроен"
+            exit 1
+          fi
+          echo "✅ Все secrets настроены"
+
       - name: 🔑 SSH Deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
           script: |
             cd /app
             ./update.sh
 
-      - name: 📧 Notify on Success
-        if: success()
+      - name: 📧 Notify on Success (Slack)
+        if: success() && secrets.SLACK_WEBHOOK != ''
         uses: 8398a7/action-slack@v3
         with:
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
           status: custom
           payload: |
             {
@@ -34,20 +51,21 @@ jobs:
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: '*✅ Deployment Successful*\n' +
-                          'Repository: ${{ github.repository }}\n' +
-                          'Branch: ${{ github.ref_name }}\n' +
-                          'Commit: ${{ github.sha }}\n' +
-                          'Actor: ${{ github.actor }}'
+                    text: '*✅ Deployment Successful*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nActor: ${{ github.actor }}'
                   }
                 }
               ]
             }
 
-      - name: 📧 Notify on Failure
-        if: failure()
+      - name: ✅ Success Summary
+        if: success()
+        run: echo "✅ Deployment completed successfully"
+
+      - name: 📧 Notify on Failure (Slack)
+        if: failure() && secrets.SLACK_WEBHOOK != ''
         uses: 8398a7/action-slack@v3
         with:
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
           status: custom
           payload: |
             {
@@ -57,11 +75,12 @@ jobs:
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: '*❌ Deployment Failed*\n' +
-                          'Repository: ${{ github.repository }}\n' +
-                          'Branch: ${{ github.ref_name }}\n' +
-                          'Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+                    text: '*❌ Deployment Failed*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nLogs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
                   }
                 }
               ]
             }
+
+      - name: ❌ Failure Summary
+        if: failure()
+        run: echo "❌ Deployment failed. Check logs above"
