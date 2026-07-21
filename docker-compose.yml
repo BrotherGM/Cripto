@@ -9,9 +9,9 @@ services:
       - DJANGO_DEBUG=False
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
-      - DB_NAME=cripto_prod
-      - DB_USER=cripto
-      - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
+      - DB_NAME=Cripto
+      - DB_USER=postgres
+      - DB_PASSWORD=
       - DB_HOST=localhost
       - DB_PORT=5432
       - TRADING_MODE=demo
@@ -45,9 +45,9 @@ services:
       - DJANGO_DEBUG=False
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
-      - DB_NAME=cripto_prod
-      - DB_USER=cripto
-      - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
+      - DB_NAME=Cripto
+      - DB_USER=postgres
+      - DB_PASSWORD=
       - DB_HOST=localhost
       - DB_PORT=5432
       - TRADING_MODE=demo
