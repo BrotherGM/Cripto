@@ -31,3 +31,4 @@ logs/
 # Прочее
 .DS_Store
 .claude/
+nginx.conf
