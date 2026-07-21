@@ -38,10 +38,12 @@ jobs:
             ./update.sh
 
       - name: 📧 Notify on Success (Slack)
-        if: success() && secrets.SLACK_WEBHOOK != ''
+        if: success() && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         uses: 8398a7/action-slack@v3
         with:
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          webhook_url: ${{ env.SLACK_WEBHOOK }}
           status: custom
           payload: |
             {
@@ -62,10 +64,12 @@ jobs:
         run: echo "✅ Deployment completed successfully"
 
       - name: 📧 Notify on Failure (Slack)
-        if: failure() && secrets.SLACK_WEBHOOK != ''
+        if: failure() && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         uses: 8398a7/action-slack@v3
         with:
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          webhook_url: ${{ env.SLACK_WEBHOOK }}
           status: custom
           payload: |
             {
