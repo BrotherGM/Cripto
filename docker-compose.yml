@@ -12,7 +12,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=172.17.0.1
+      - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -25,6 +25,8 @@ services:
       - OKX_LIVE_FLAG=1
     ports:
       - "8077:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./staticfiles:/app/staticfiles
       - ./logs:/app/logs
@@ -51,7 +53,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=172.17.0.1
+      - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -64,6 +66,8 @@ services:
       - OKX_LIVE_FLAG=1
     depends_on:
       - web
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./logs:/app/logs
     networks:
