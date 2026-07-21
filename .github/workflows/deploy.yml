@@ -8,10 +8,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.1.7
-
-      - name: ✅ Check Secrets
+      - name: ✅ Check Required Secrets
         run: |
+          echo "=== Проверка secrets ==="
           if [ -z "${{ secrets.SERVER_HOST }}" ]; then
             echo "❌ Ошибка: SERVER_HOST secret не настроен"
             exit 1
@@ -24,67 +23,54 @@ jobs:
             echo "❌ Ошибка: SERVER_SSH_KEY secret не настроен"
             exit 1
           fi
-          echo "✅ Все secrets настроены"
+          echo "✅ Все обязательные secrets настроены"
 
-      - name: 🔑 SSH Deploy
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || '22' }}
-          script: |
-            cd /app
-            ./update.sh
-
-      - name: 📧 Notify on Success (Slack)
-        if: success() && env.SLACK_WEBHOOK != ''
+      - name: 🔑 Deploy via SSH (Bash only)
         env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        uses: 8398a7/action-slack@v3
-        with:
-          webhook_url: ${{ env.SLACK_WEBHOOK }}
-          status: custom
-          payload: |
-            {
-              text: '✅ Cripto deployment successful',
-              blocks: [
-                {
-                  type: 'section',
-                  text: {
-                    type: 'mrkdwn',
-                    text: '*✅ Deployment Successful*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nActor: ${{ github.actor }}'
-                  }
-                }
-              ]
-            }
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT || '22' }}
+        run: |
+          echo "=== Развертывание на сервер ==="
 
-      - name: ✅ Success Summary
+          # Сохранить SSH ключ
+          mkdir -p ~/.ssh
+          echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Отключить проверку хоста
+          cat >> ~/.ssh/config << EOF
+          Host deploy-server
+            HostName $SERVER_HOST
+            User $SERVER_USER
+            Port $SERVER_PORT
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile=/dev/null
+          EOF
+
+          # Запустить update.sh на сервере
+          echo "📦 Запуск обновления на сервере..."
+          ssh -v deploy-server 'cd /app && bash ./update.sh' || {
+            echo "❌ Ошибка при выполнении update.sh"
+            exit 1
+          }
+
+          echo "✅ Развертывание завершено успешно"
+
+      - name: 📊 Deployment Summary
         if: success()
-        run: echo "✅ Deployment completed successfully"
+        run: |
+          echo "✅ DEPLOYMENT SUCCESSFUL"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
 
-      - name: 📧 Notify on Failure (Slack)
-        if: failure() && env.SLACK_WEBHOOK != ''
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        uses: 8398a7/action-slack@v3
-        with:
-          webhook_url: ${{ env.SLACK_WEBHOOK }}
-          status: custom
-          payload: |
-            {
-              text: '❌ Cripto deployment failed',
-              blocks: [
-                {
-                  type: 'section',
-                  text: {
-                    type: 'mrkdwn',
-                    text: '*❌ Deployment Failed*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nLogs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
-                  }
-                }
-              ]
-            }
-
-      - name: ❌ Failure Summary
+      - name: ❌ Deployment Failed
         if: failure()
-        run: echo "❌ Deployment failed. Check logs above"
+        run: |
+          echo "❌ DEPLOYMENT FAILED"
+          echo "Check SSH connection and update.sh script"
+          exit 1
