@@ -1,3 +1,5 @@
+version: '3.9'
+
 services:
   # Django Web приложение
   web:
@@ -23,10 +25,13 @@ services:
       - OKX_LIVE_API_SECRET=${OKX_LIVE_API_SECRET}
       - OKX_LIVE_PASSPHRASE=${OKX_LIVE_PASSPHRASE}
       - OKX_LIVE_FLAG=1
-    network_mode: host
+    ports:
+      - "8077:8000"
     volumes:
       - ./staticfiles:/app/staticfiles
       - ./logs:/app/logs
+    networks:
+      - cripto-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
@@ -61,10 +66,10 @@ services:
       - OKX_LIVE_FLAG=1
     depends_on:
       - web
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./logs:/app/logs
+    networks:
+      - cripto-network
     restart: unless-stopped
 
   # Nginx reverse proxy (опционально для production)
@@ -85,3 +90,6 @@ services:
   #     - cripto-network
   #   restart: unless-stopped
 
+networks:
+  cripto-network:
+    driver: bridge
