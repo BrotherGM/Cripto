@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # Django Web приложение
   web:
@@ -27,6 +25,8 @@ services:
       - OKX_LIVE_FLAG=1
     ports:
       - "8077:8000"
+    extra_hosts:
+      - "localhost:host-gateway"
     volumes:
       - ./staticfiles:/app/staticfiles
       - ./logs:/app/logs
@@ -66,6 +66,8 @@ services:
       - OKX_LIVE_FLAG=1
     depends_on:
       - web
+    extra_hosts:
+      - "localhost:host-gateway"
     volumes:
       - ./logs:/app/logs
     networks:
