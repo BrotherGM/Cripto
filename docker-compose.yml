@@ -5,8 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: cripto-web
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: host
     environment:
       - DJANGO_DEBUG=False
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
@@ -14,7 +13,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=host.docker.internal
+      - DB_HOST=localhost
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -46,8 +45,7 @@ services:
       dockerfile: Dockerfile
     container_name: cripto-worker
     command: sh -c "python manage.py run_bots --interval 5 --reconcile-every 12"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: host
     environment:
       - DJANGO_DEBUG=False
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
@@ -55,7 +53,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=host.docker.internal
+      - DB_HOST=localhost
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
