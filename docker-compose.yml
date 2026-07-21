@@ -1,26 +1,6 @@
 version: '3.9'
 
 services:
-  # PostgreSQL БД
-  postgres:
-    image: postgres:15-alpine
-    container_name: cripto-db
-    environment:
-      POSTGRES_DB: cripto_prod
-      POSTGRES_USER: cripto
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-your-secure-password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cripto -d cripto_prod"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - cripto-network
-
   # Django Web приложение
   web:
     build:
@@ -34,7 +14,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=postgres
+      - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -47,9 +27,6 @@ services:
       - OKX_LIVE_FLAG=1
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
     volumes:
       - ./staticfiles:/app/staticfiles
       - ./logs:/app/logs
@@ -76,7 +53,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=postgres
+      - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -88,10 +65,7 @@ services:
       - OKX_LIVE_PASSPHRASE=${OKX_LIVE_PASSPHRASE}
       - OKX_LIVE_FLAG=1
     depends_on:
-      postgres:
-        condition: service_healthy
-      web:
-        condition: service_healthy
+      - web
     volumes:
       - ./logs:/app/logs
     networks:
@@ -114,9 +88,6 @@ services:
     networks:
       - cripto-network
     restart: unless-stopped
-
-volumes:
-  postgres_data:
 
 networks:
   cripto-network:
