@@ -163,7 +163,7 @@ class GridStrategyAdmin(admin.ModelAdmin):
     change_list_template = "admin/grid/gridstrategy/change_list.html"
     list_display = (
         "name", "type_badge", "mode_badge", "inst_id", "status_badge", "runner_badge",
-        "earnings_badge", "order_size", "open_chart",
+        "earnings_badge", "order_size", "trading_toggle", "open_chart",
     )
     list_filter = ("mode", "strategy_type", "status", "inst_type")
     search_fields = ("name", "inst_id")
@@ -282,6 +282,38 @@ class GridStrategyAdmin(admin.ModelAdmin):
             return format_html('<span style="color:#c80" title="ждёт воркер run_bots">'
                                '◍ ожидает</span>')
         return format_html('<span style="color:#999">○ остановлен</span>')
+
+    @admin.display(description="Управление")
+    def trading_toggle(self, obj):
+        """Кнопка запуска/остановки торговли (toggle)."""
+        if not obj or not obj.pk:
+            return "—"
+
+        if obj.desired_state == "run":
+            # Стратегия запущена — показываем кнопку "Остановить"
+            url = reverse('admin:grid_gridstrategy_change', args=[obj.pk])
+            return format_html(
+                '<a href="javascript:void(0)" onclick="'
+                'var pk={}; '
+                'fetch(\'/admin/grid/gridstrategy/\' + pk + \"/trading-toggle/\", '
+                '{{method:\"POST\", headers:{{\"X-CSRFToken\":getCookie(\"csrftoken\")}}}}) '
+                '.then(()=>location.reload())" '
+                'style="background:#c00; color:white; padding:4px 8px; '
+                'border-radius:3px; cursor:pointer; text-decoration:none; '
+                'display:inline-block; font-weight:bold">⏹ Стоп</a>',
+                obj.pk)
+        else:
+            # Стратегия остановлена — показываем кнопку "Запустить"
+            return format_html(
+                '<a href="javascript:void(0)" onclick="'
+                'var pk={}; '
+                'fetch(\'/admin/grid/gridstrategy/\' + pk + \"/trading-toggle/\", '
+                '{{method:\"POST\", headers:{{\"X-CSRFToken\":getCookie(\"csrftoken\")}}}}) '
+                '.then(()=>location.reload())" '
+                'style="background:#0a0; color:white; padding:4px 8px; '
+                'border-radius:3px; cursor:pointer; text-decoration:none; '
+                'display:inline-block; font-weight:bold">▶ Пуск</a>',
+                obj.pk)
 
     @admin.display(description="Состояние воркера")
     def worker_state(self, obj):
@@ -607,6 +639,28 @@ class GridStrategyAdmin(admin.ModelAdmin):
                 self.message_user(request, f"[{s.name}] рассчитано уровней: {n}", messages.SUCCESS)
             except Exception as e:  # noqa: BLE001
                 self.message_user(request, f"[{s.name}] ошибка: {e}", messages.ERROR)
+
+    def trading_toggle_view(self, request, pk):
+        """Переключает desired_state стратегии (run ↔ stop)."""
+        from django.http import JsonResponse
+        try:
+            s = GridStrategy.objects.get(pk=pk)
+            s.desired_state = "stop" if s.desired_state == "run" else "run"
+            s.save(update_fields=["desired_state"])
+            return JsonResponse({"ok": True, "desired_state": s.desired_state})
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=400)
+
+    def get_urls(self):
+        from django.urls import path as django_path
+        urls = [
+            django_path(
+                "<int:pk>/trading-toggle/",
+                self.admin_site.admin_view(self.trading_toggle_view),
+                name="grid_gridstrategy_trading_toggle",
+            ),
+        ]
+        return urls + super().get_urls()
 
 
 @admin.register(GridLevel)
