@@ -12,7 +12,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=host.docker.internal
+      - DB_HOST=localhost
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -23,15 +23,10 @@ services:
       - OKX_LIVE_API_SECRET=${OKX_LIVE_API_SECRET}
       - OKX_LIVE_PASSPHRASE=${OKX_LIVE_PASSPHRASE}
       - OKX_LIVE_FLAG=1
-    ports:
-      - "8077:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: host
     volumes:
       - ./staticfiles:/app/staticfiles
       - ./logs:/app/logs
-    networks:
-      - cripto-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
@@ -53,7 +48,7 @@ services:
       - DB_NAME=cripto_prod
       - DB_USER=cripto
       - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
-      - DB_HOST=host.docker.internal
+      - DB_HOST=localhost
       - DB_PORT=5432
       - TRADING_MODE=demo
       - OKX_API_KEY=${OKX_API_KEY}
@@ -70,8 +65,6 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./logs:/app/logs
-    networks:
-      - cripto-network
     restart: unless-stopped
 
   # Nginx reverse proxy (опционально для production)
@@ -92,6 +85,3 @@ services:
   #     - cripto-network
   #   restart: unless-stopped
 
-networks:
-  cripto-network:
-    driver: bridge
