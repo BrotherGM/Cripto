@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Руководство по обновлению - Cripto</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @page { size: A4; margin: 2cm; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.7;
+            color: #333;
+            background: #f5f7fa;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+        }
+
+        .title-page {
+            text-align: center;
+            padding: 60px 0;
+            border-bottom: 2px solid #e83e8c;
+            margin-bottom: 40px;
+        }
+
+        .title-page h1 {
+            font-size: 2.8em;
+            color: #e83e8c;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .title-page .subtitle {
+            font-size: 1.3em;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .title-page .version {
+            font-size: 0.95em;
+            color: #999;
+        }
+
+        .toc {
+            background: #faf5fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+
+        .toc h2 {
+            color: #e83e8c;
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+
+        .toc ol {
+            list-style-position: inside;
+            color: #666;
+        }
+
+        .toc li {
+            margin: 8px 0;
+            font-size: 1.05em;
+        }
+
+        .section {
+            margin: 40px 0;
+            page-break-inside: avoid;
+        }
+
+        .section h2 {
+            color: #e83e8c;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #e83e8c;
+        }
+
+        .section h3 {
+            color: #333;
+            font-size: 1.3em;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        .section p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .section ul, .section ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+
+        .section li {
+            margin-bottom: 10px;
+            line-height: 1.8;
+        }
+
+        .section strong {
+            color: #e83e8c;
+        }
+
+        .code-block {
+            background: #f5f5f5;
+            border-left: 4px solid #e83e8c;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            overflow-x: auto;
+            color: #333;
+        }
+
+        .highlight-box {
+            background: #faf5fa;
+            border-left: 4px solid #e83e8c;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .highlight-box h4 {
+            color: #e83e8c;
+            margin-bottom: 10px;
+        }
+
+        .method-box {
+            background: #ffffff;
+            border: 2px solid #e83e8c;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+
+        .method-box h3 {
+            color: #e83e8c;
+            margin-top: 0;
+            border-bottom: 2px solid #e83e8c;
+            padding-bottom: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        thead {
+            background: #e83e8c;
+            color: white;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .step-number {
+            display: inline-block;
+            background: #e83e8c;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ff9800;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 4px;
+        }
+
+        .warning h3 {
+            color: #ff9800;
+            margin-top: 0;
+        }
+
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 4px;
+        }
+
+        .success h3 {
+            color: #28a745;
+            margin-top: 0;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #e83e8c;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            margin-left: 10px;
+            font-weight: 600;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        @media print {
+            body { background: white; }
+            .section { page-break-inside: avoid; }
+            .method-box { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title-page">
+            <h1>🚀 Руководство по обновлению</h1>
+            <div class="subtitle">Для приложений на сервере с автоматическим обновлением</div>
+            <div class="version">Cripto Grid Trading Bot v2.0 | 21.07.2026</div>
+        </div>
+
+        <div class="toc">
+            <h2>📑 Содержание</h2>
+            <ol>
+                <li>Быстрый старт (2-3 минуты)</li>
+                <li>Способ 1: Ручное обновление (рекомендуется)</li>
+                <li>Способ 2: Автоматическое обновление (CI/CD)</li>
+                <li>Откат изменений</li>
+                <li>Устранение проблем</li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>1️⃣ Быстрый старт (2-3 минуты)</h2>
+
+            <p>Самый простой способ обновить приложение на сервере:</p>
+
+            <div class="success">
+                <h3>✅ Минимум действий</h3>
+                <div class="code-block">
+ssh user@server.com<br>
+cd /app<br>
+./update.sh
+                </div>
+            </div>
+
+            <h3>Что делает скрипт</h3>
+            <ul>
+                <li>✓ <strong>Создаёт резервную копию</strong> базы данных</li>
+                <li>✓ <strong>Получает свежий код</strong> из GitHub</li>
+                <li>✓ <strong>Применяет новые миграции</strong> БД</li>
+                <li>✓ <strong>Перезагружает сервисы</strong> (веб и воркер)</li>
+                <li>✓ <strong>Проверяет здоровье</strong> приложения</li>
+                <li>✓ <strong>Показывает логи</strong> выполнения</li>
+            </ul>
+
+            <p style="margin-top: 20px; color: #666;">
+                <strong>Итоговое время:</strong> 2-3 минуты в зависимости от размера кода
+            </p>
+        </div>
+
+        <div class="section">
+            <h2>2️⃣ Способ 1: Ручное обновление</h2>
+            <p style="color: #28a745; font-weight: bold;">✅ Рекомендуется для полного контроля</p>
+
+            <div class="method-box">
+                <h3>Полный процесс обновления</h3>
+
+                <h4><span class="step-number">1</span>Подключиться к серверу</h4>
+                <div class="code-block">
+ssh user@ваш-ip-адрес
+                </div>
+                <p>Замените "user" на вашего пользователя, "ваш-ip-адрес" на IP или домен сервера</p>
+
+                <h4><span class="step-number">2</span>Перейти в папку приложения</h4>
+                <div class="code-block">
+cd /app
+                </div>
+
+                <h4><span class="step-number">3</span>Запустить скрипт обновления</h4>
+                <div class="code-block">
+./update.sh
+                </div>
+
+                <h4><span class="step-number">4</span>Дождаться завершения</h4>
+                <p>Скрипт выведет сообщение об успешном завершении:</p>
+                <div class="code-block" style="color: #28a745;">
+✅ Deployment completed successfully!
+                </div>
+
+                <h4><span class="step-number">5</span>Проверить результат</h4>
+                <div class="code-block">
+curl https://your-domain.com/admin/  # Проверить доступность
+systemctl status cripto-web          # Проверить статус сервиса
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h4>💡 Полезные команды после обновления</h4>
+                <div class="code-block">
+# Проверить статус сервисов
+systemctl status cripto-web cripto-worker
+
+# Посмотреть логи (последние 50 строк)
+journalctl -u cripto-web -n 50
+
+# Проверить количество ордеров в БД
+psql -U cripto -d cripto_prod -c "SELECT COUNT(*) FROM grid_gridstrategy;"
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>3️⃣ Способ 2: Автоматическое обновление (CI/CD)</h2>
+            <p style="color: #e83e8c; font-weight: bold;">🤖 GitHub Actions с автоматическим развёртыванием</p>
+
+            <p>
+                Каждый раз когда вы делаете <code>git push</code> в main ветку,
+                GitHub Actions автоматически обновляет приложение на сервере.
+            </p>
+
+            <div class="method-box">
+                <h3>Одноразовая настройка (15 минут)</h3>
+
+                <h4><span class="step-number">1</span>На сервере: сгенерировать SSH ключ</h4>
+                <p>Подключитесь на сервер и выполните:</p>
+                <div class="code-block">
+ssh-keygen -t ed25519 -f ~/.ssh/deploy_key -N ""
+cat ~/.ssh/deploy_key
+                </div>
+                <p>Скопируйте весь вывод (это ваш приватный ключ)</p>
+
+                <h4><span class="step-number">2</span>На GitHub: добавить secrets</h4>
+                <ol>
+                    <li>Перейти в Settings репозитория</li>
+                    <li>Выбрать: Secrets and variables → Actions</li>
+                    <li>Нажать "New repository secret"</li>
+                    <li>Добавить 4 переменные (см. таблицу ниже)</li>
+                </ol>
+
+                <table style="margin-top: 20px;">
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Значение</th>
+                            <th>Пример</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>SERVER_HOST</strong></td>
+                            <td>IP адрес сервера</td>
+                            <td>91.210.191.80</td>
+                        </tr>
+                        <tr>
+                            <td><strong>SERVER_USER</strong></td>
+                            <td>Пользователь на сервере</td>
+                            <td>deploy</td>
+                        </tr>
+                        <tr>
+                            <td><strong>SERVER_PORT</strong></td>
+                            <td>SSH порт</td>
+                            <td>22</td>
+                        </tr>
+                        <tr>
+                            <td><strong>SERVER_SSH_KEY</strong></td>
+                            <td>Приватный ключ (полный текст)</td>
+                            <td>-----BEGIN OPENSSH...</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 style="margin-top: 30px;"><span class="step-number">3</span>Готово! Теперь просто git push</h4>
+                <div class="code-block">
+git push origin main
+                </div>
+                <p>Приложение обновится автоматически! Статус можно увидеть в GitHub → Actions</p>
+            </div>
+
+            <div class="highlight-box">
+                <h4>📊 Мониторинг автоматического обновления</h4>
+                <p>
+                    После каждого git push перейдите на GitHub → Actions tab
+                    для просмотра статуса развёртывания.
+                </p>
+                <ul>
+                    <li>🟢 Зелёная галочка = успешно обновлено</li>
+                    <li>🔴 Красный крест = ошибка при обновлении</li>
+                    <li>⏳ Жёлтый круг = идёт обновление</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>4️⃣ Откат изменений</h2>
+            <p>Если что-то пошло не так и нужно вернуться на предыдущую версию:</p>
+
+            <h3>Способ 1: Восстановить БД из резервной копии</h3>
+            <div class="code-block">
+# Посмотреть доступные бэкапы<br>
+ls -lh backups/<br>
+<br>
+# Восстановить конкретный бэкап (замените имя файла)<br>
+gunzip &lt; backups/cripto_20260721_120000.sql.gz | psql -U cripto -d cripto_prod
+            </div>
+            <p style="margin-top: 10px; color: #666;">
+                Этот способ восстанавливает состояние БД на момент последнего автоматического бэкапа.
+            </p>
+
+            <h3>Способ 2: Вернуться на предыдущий коммит</h3>
+            <div class="code-block">
+# Посмотреть историю коммитов<br>
+git log --oneline<br>
+<br>
+# Вернуться на нужный коммит (замените хеш)<br>
+git reset --hard a3c5f2d<br>
+<br>
+# Запустить обновление<br>
+./update.sh
+            </div>
+
+            <h3>Способ 3: Просто перезагрузить сервис</h3>
+            <p>Если приложение просто зависло:</p>
+            <div class="code-block">
+sudo systemctl restart cripto-web<br>
+sudo systemctl restart cripto-worker
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>5️⃣ Устранение проблем</h2>
+
+            <h3>❌ Скрипт не найден: "command not found: update.sh"</h3>
+            <p><strong>Решение:</strong> Сделайте скрипт исполняемым</p>
+            <div class="code-block">
+chmod +x update.sh<br>
+./update.sh
+            </div>
+
+            <h3>❌ Ошибка миграции БД: "relation does not exist"</h3>
+            <p><strong>Решение:</strong> Проверить логи и повторить обновление</p>
+            <div class="code-block">
+# Посмотреть логи<br>
+journalctl -u cripto-web -n 100<br>
+<br>
+# Повторить обновление<br>
+./update.sh
+            </div>
+
+            <h3>❌ Сервис не запустился: "Service failed"</h3>
+            <p><strong>Решение:</strong> Проверить статус и ошибки</p>
+            <div class="code-block">
+# Проверить статус<br>
+sudo systemctl status cripto-web<br>
+<br>
+# Посмотреть подробные логи<br>
+sudo journalctl -u cripto-web -n 50 --no-pager
+            </div>
+
+            <h3>❌ GitHub Actions не работает</h3>
+            <p><strong>Проверьте:</strong></p>
+            <ul>
+                <li>Secrets установлены правильно (Settings → Secrets)</li>
+                <li>SSH ключ имеет правильный формат</li>
+                <li>Пользователь на сервере имеет доступ к /app</li>
+                <li>Файл .github/workflows/deploy.yml существует в main ветке</li>
+            </ul>
+
+            <div class="warning">
+                <h3>⚠️ Если ничего не помогает</h3>
+                <ol>
+                    <li>Отменить последний коммит: <code>git reset --hard HEAD~1</code></li>
+                    <li>Перезагрузить сервер: <code>sudo reboot</code></li>
+                    <li>Проверить интернет соединение на сервере</li>
+                    <li>Связаться со специалистом для диагностики</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Быстрая справка</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Команда</th>
+                        <th>Что делает</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>cd /app && ./update.sh</code></td>
+                        <td>Полное обновление приложения</td>
+                    </tr>
+                    <tr>
+                        <td><code>systemctl status cripto-web</code></td>
+                        <td>Проверить статус веб-приложения</td>
+                    </tr>
+                    <tr>
+                        <td><code>journalctl -u cripto-web -f -n 50</code></td>
+                        <td>Посмотреть логи в реальном времени</td>
+                    </tr>
+                    <tr>
+                        <td><code>ls -lh backups/</code></td>
+                        <td>Посмотреть доступные бэкапы БД</td>
+                    </tr>
+                    <tr>
+                        <td><code>git log --oneline</code></td>
+                        <td>История коммитов</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            <p>
+                📄 Руководство по обновлению | Cripto Grid Trading Bot v2.0<br>
+                Для сохранения в PDF используйте: Ctrl+P (или Cmd+P) → "Сохранить как PDF"<br>
+                <em>Последнее обновление: 21.07.2026</em>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

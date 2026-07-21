@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Руководство админ-панели - Cripto</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @page { size: A4; margin: 2cm; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.7;
+            color: #333;
+            background: #f5f7fa;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+        }
+
+        .title-page {
+            text-align: center;
+            padding: 60px 0;
+            border-bottom: 2px solid #0066cc;
+            margin-bottom: 40px;
+        }
+
+        .title-page h1 {
+            font-size: 2.8em;
+            color: #0066cc;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .title-page .subtitle {
+            font-size: 1.3em;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .title-page .version {
+            font-size: 0.95em;
+            color: #999;
+        }
+
+        .toc {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+
+        .toc h2 {
+            color: #0066cc;
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+
+        .toc ol {
+            list-style-position: inside;
+            color: #666;
+        }
+
+        .toc li {
+            margin: 8px 0;
+            font-size: 1.05em;
+        }
+
+        .section {
+            margin: 40px 0;
+            page-break-inside: avoid;
+        }
+
+        .section h2 {
+            color: #0066cc;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #0066cc;
+        }
+
+        .section h3 {
+            color: #333;
+            font-size: 1.3em;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        .section p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .section ul, .section ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+
+        .section li {
+            margin-bottom: 10px;
+            line-height: 1.8;
+        }
+
+        .section strong {
+            color: #0066cc;
+        }
+
+        .highlight-box {
+            background: #f0f4ff;
+            border-left: 4px solid #0066cc;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .highlight-box h4 {
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .status-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #0066cc;
+        }
+
+        .status-item strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #0066cc;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        thead {
+            background: #0066cc;
+            color: white;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tbody tr:hover {
+            background: #f0f4ff;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #0066cc;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            margin-left: 10px;
+            font-weight: 600;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 4px;
+        }
+
+        .warning h3 {
+            color: #ff9800;
+            margin-top: 0;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        @media print {
+            body { background: white; }
+            .section { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title-page">
+            <h1>⚙️ Руководство админ-панели</h1>
+            <div class="subtitle">Управление стратегиями и мониторинг воркера</div>
+            <div class="version">Cripto Grid Trading Bot v2.0 | 21.07.2026</div>
+        </div>
+
+        <div class="toc">
+            <h2>📑 Содержание</h2>
+            <ol>
+                <li>Мониторинг статуса воркера</li>
+                <li>Управление стратегиями</li>
+                <li>Ключевые параметры стратегии</li>
+                <li>Состояния стратегии</li>
+                <li>Просмотр аналитики</li>
+                <li>Безопасность администратора</li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>1️⃣ Мониторинг статуса воркера</h2>
+            <p>
+                В админ-панели добавлен новый раздел <strong>"Статус воркера"</strong> для отслеживания
+                работы торгового бота в реальном времени.
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Показатель</th>
+                        <th>Описание</th>
+                        <th>Что означает</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>✓ Статус</strong></td>
+                        <td>Индикатор работы воркера</td>
+                        <td>🟢 Зелёная = работает, 🔴 Красная = не запущен</td>
+                    </tr>
+                    <tr>
+                        <td><strong>⏱️ Последнее обновление</strong></td>
+                        <td>Времени прошло с последнего сигнала</td>
+                        <td>Если > 60 сек — воркер зависает</td>
+                    </tr>
+                    <tr>
+                        <td><strong>🔄 Циклов</strong></td>
+                        <td>Количество завершённых торговых циклов</td>
+                        <td>Растёт → воркер активно работает</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📦 Ордеров</strong></td>
+                        <td>Всего обработано ордеров</td>
+                        <td>Показывает общее количество сделок</td>
+                    </tr>
+                    <tr>
+                        <td><strong>⚠️ Ошибки</strong></td>
+                        <td>Последняя ошибка (если была)</td>
+                        <td>Помогает диагностировать проблемы</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="highlight-box">
+                <h4>🚨 Важно</h4>
+                <p>
+                    Если статус показывает красный индикатор или последнее обновление > 60 секунд,
+                    воркер требует перезагрузки. Обратитесь к разделу "Устранение проблем" в руководстве.
+                </p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>2️⃣ Управление стратегиями</h2>
+            <p>В админ-панели вы можете полностью управлять торговыми стратегиями:</p>
+
+            <ul>
+                <li>
+                    <strong>Создавать новые</strong> стратегии
+                    (Grid, Scalping, DCA, Trend, Arbitrage)
+                </li>
+                <li>
+                    <strong>Редактировать</strong> параметры существующих стратегий без остановки
+                </li>
+                <li>
+                    <strong>Запускать/останавливать</strong> торговлю по каждой отдельной стратегии
+                </li>
+                <li>
+                    <strong>Переключаться</strong> между Demo (тестовая) и Live (реальная) режимом
+                </li>
+                <li>
+                    <strong>Устанавливать</strong> Stop-loss и risk management параметры
+                </li>
+                <li>
+                    <strong>Просматривать</strong> все открытые ордера и позиции
+                </li>
+            </ul>
+
+            <div class="highlight-box">
+                <h4>💡 Совет</h4>
+                <p>
+                    Начните с Demo режима для тестирования новых стратегий.
+                    Переходите на Live только когда убедитесь в корректности параметров.
+                </p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>3️⃣ Ключевые параметры стратегии</h2>
+            <p>При создании или редактировании стратегии заполняйте следующие параметры:</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Параметр</th>
+                        <th>Тип</th>
+                        <th>Описание</th>
+                        <th>Пример</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Название</strong></td>
+                        <td>Текст</td>
+                        <td>Произвольное имя для идентификации</td>
+                        <td>Grid BTC/USDT #1</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Пара</strong></td>
+                        <td>Выбор</td>
+                        <td>Торговая пара (BTC, ETH, XRP и т.д.)</td>
+                        <td>BTC/USDT</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Режим</strong></td>
+                        <td>Выбор</td>
+                        <td>Demo (тестовая) или Live (реальная)</td>
+                        <td>Demo</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Начальный баланс</strong></td>
+                        <td>Число</td>
+                        <td>Сумма средств для начала торговли (USDT)</td>
+                        <td>1000</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Кол-во уровней</strong></td>
+                        <td>Число</td>
+                        <td>Для Grid: число сеток распределения</td>
+                        <td>10</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Верхняя цена</strong></td>
+                        <td>Число</td>
+                        <td>Максимальная цена диапазона</td>
+                        <td>50000</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Нижняя цена</strong></td>
+                        <td>Число</td>
+                        <td>Минимальная цена диапазона</td>
+                        <td>40000</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Stop Loss %</strong></td>
+                        <td>Число</td>
+                        <td>Процент убытка для автоматического закрытия</td>
+                        <td>5</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>4️⃣ Состояния стратегии</h2>
+            <p>Каждая стратегия находится в одном из следующих состояний:</p>
+
+            <div class="status-grid">
+                <div class="status-item">
+                    <strong>🟢 Активна</strong>
+                    <p>Торговля идёт, бот выполняет ордера</p>
+                    <p style="color: #666; font-size: 0.9em;">Действие: Остановить</p>
+                </div>
+                <div class="status-item">
+                    <strong>🔴 Остановлена</strong>
+                    <p>Ждёт команды на запуск</p>
+                    <p style="color: #666; font-size: 0.9em;">Действие: Запустить</p>
+                </div>
+                <div class="status-item">
+                    <strong>📦 Архив</strong>
+                    <p>Бывшая активная стратегия, история</p>
+                    <p style="color: #666; font-size: 0.9em;">Действие: Восстановить</p>
+                </div>
+                <div class="status-item">
+                    <strong>⚠️ Ошибка</strong>
+                    <p>Произошла критическая ошибка</p>
+                    <p style="color: #666; font-size: 0.9em;">Действие: Проверить логи</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>5️⃣ Просмотр аналитики</h2>
+            <p>Каждая стратегия предоставляет детальную аналитику:</p>
+
+            <h3>Общая информация</h3>
+            <ul>
+                <li><strong>Общий профит/убыток:</strong> В USD и в процентах от вложения</li>
+                <li><strong>Количество сделок:</strong> Всего закрытых ордеров</li>
+                <li><strong>Win rate:</strong> Процент прибыльных сделок</li>
+                <li><strong>Средний профит:</strong> Среднее значение профита на сделку</li>
+            </ul>
+
+            <h3>Информация о рисках</h3>
+            <ul>
+                <li><strong>Плечо/маржа:</strong> Если используется маржинальная торговля</li>
+                <li><strong>Максимальный убыток:</strong> Самая убыточная сделка</li>
+                <li><strong>Открытые позиции:</strong> Количество активных ордеров</li>
+                <li><strong>Уровень риска:</strong> Общая оценка риска стратегии</li>
+            </ul>
+
+            <h3>Просмотр деталей</h3>
+            <p>
+                Нажмите на название стратегии для раскрытия полного списка всех связанных ордеров,
+                логов ошибок и событий выполнения.
+            </p>
+        </div>
+
+        <div class="section">
+            <h2>6️⃣ Безопасность администратора</h2>
+
+            <div class="warning">
+                <h3>🔒 Важные требования безопасности</h3>
+                <ul>
+                    <li><strong>Доступ:</strong> Админ-панель доступна только авторизованным администраторам</li>
+                    <li><strong>Пароль:</strong> Используйте надёжный пароль (минимум 15 символов)</li>
+                    <li><strong>2FA:</strong> Рекомендуется включить двухфакторную аутентификацию</li>
+                    <li><strong>Логирование:</strong> Все административные действия записываются в логи</li>
+                    <li><strong>IP адреса:</strong> По возможности ограничивайте доступ определёнными IP</li>
+                </ul>
+            </div>
+
+            <h3>Что логируется</h3>
+            <ul>
+                <li>Создание и редактирование стратегий</li>
+                <li>Запуск и остановка торговли</li>
+                <li>Изменение критических параметров</li>
+                <li>Вход в админ-панель</li>
+                <li>Экспорт данных</li>
+            </ul>
+
+            <h3>Рекомендации</h3>
+            <ul>
+                <li>Не делитесь логин/паролем с другими пользователями</li>
+                <li>Регулярно проверяйте логи для обнаружения подозрительной активности</li>
+                <li>Используйте сильные пароли и периодически их меняйте</li>
+                <li>Ограничьте число администраторов минимально необходимым</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>
+                📄 Руководство админ-панели | Cripto Grid Trading Bot v2.0<br>
+                Для сохранения в PDF используйте: Ctrl+P (или Cmd+P) → "Сохранить как PDF"<br>
+                <em>Последнее обновление: 21.07.2026</em>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Инструкция по торговле - Cripto</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.7;
+            color: #333;
+            background: #f5f7fa;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+        }
+
+        .title-page {
+            text-align: center;
+            padding: 60px 0;
+            border-bottom: 2px solid #28a745;
+            margin-bottom: 40px;
+        }
+
+        .title-page h1 {
+            font-size: 2.8em;
+            color: #28a745;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .title-page .subtitle {
+            font-size: 1.3em;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .title-page .version {
+            font-size: 0.95em;
+            color: #999;
+        }
+
+        .toc {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+
+        .toc h2 {
+            color: #28a745;
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+
+        .toc ol {
+            list-style-position: inside;
+            color: #666;
+        }
+
+        .toc li {
+            margin: 8px 0;
+            font-size: 1.05em;
+        }
+
+        .section {
+            margin: 40px 0;
+            page-break-inside: avoid;
+        }
+
+        .section h2 {
+            color: #28a745;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #28a745;
+        }
+
+        .section h3 {
+            color: #333;
+            font-size: 1.3em;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        .section p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .section ul, .section ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+
+        .section li {
+            margin-bottom: 10px;
+            line-height: 1.8;
+        }
+
+        .section strong {
+            color: #28a745;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        thead {
+            background: #28a745;
+            color: white;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tbody tr:hover {
+            background: #e8f5e9;
+        }
+
+        .highlight-box {
+            background: #e8f5e9;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .highlight-box h4 {
+            color: #28a745;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            margin-left: 10px;
+            font-weight: 600;
+        }
+
+        .tips {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 4px;
+        }
+
+        .tips h3 {
+            color: #ff9800;
+            margin-top: 0;
+        }
+
+        .tips ul {
+            margin-bottom: 0;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        @media print {
+            body { background: white; }
+            .section { page-break-inside: avoid; }
+            .section h2 { page-break-after: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title-page">
+            <h1>📊 Инструкция по торговле</h1>
+            <div class="subtitle">Таблица торгов, пагинация и экспорт</div>
+            <div class="version">Cripto Grid Trading Bot v2.0 | 21.07.2026</div>
+        </div>
+
+        <div class="toc">
+            <h2>📑 Содержание</h2>
+            <ol>
+                <li>Обзор таблицы торгов</li>
+                <li>Структура колонок</li>
+                <li>Автообновление данных</li>
+                <li>Пагинация (размер страницы)</li>
+                <li>Фильтры и экспорт</li>
+                <li>Полезные советы</li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>1️⃣ Обзор таблицы торгов</h2>
+            <p>
+                Таблица торгов отображает все <strong>закрытые сделки</strong> по всем активным стратегиям.
+                Это ваше главное окно для мониторинга производительности торгового бота.
+            </p>
+            <p>
+                <strong>Ключевые особенности:</strong>
+            </p>
+            <ul>
+                <li>Данные обновляются автоматически каждые 5 секунд (по умолчанию)</li>
+                <li>Отображение до 1000+ закрытых сделок</li>
+                <li>Гибкие фильтры по стратегии, типу, дате и режиму</li>
+                <li>Экспорт в Excel для анализа и бухгалтерии</li>
+                <li>Поддержка мобильных устройств</li>
+            </ul>
+
+            <div class="highlight-box">
+                <h4>💡 Обратите внимание</h4>
+                <p>
+                    В таблице отображаются <strong>только закрытые сделки</strong>.
+                    Открытые позиции можно увидеть в админ-панели под каждой стратегией.
+                </p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>2️⃣ Структура колонок</h2>
+            <p>Таблица содержит следующие информативные колонки:</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Колонка</th>
+                        <th>Описание</th>
+                        <th>Пример</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>🕐 Время</strong></td>
+                        <td>Время закрытия сделки (UTC)</td>
+                        <td>21.07.2026 14:35:42</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📝 Название</strong> <span class="badge">NEW</span></td>
+                        <td>Название стратегии</td>
+                        <td>Grid BTC/USDT #1</td>
+                    </tr>
+                    <tr>
+                        <td><strong>💰 Сумма</strong></td>
+                        <td>Вложено средств в позицию</td>
+                        <td>$1,250</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📈 Цена вход</strong></td>
+                        <td>Цена входа в позицию</td>
+                        <td>$45,230.50</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📈 Цена выход</strong></td>
+                        <td>Цена выхода из позиции</td>
+                        <td>$45,512.75</td>
+                    </tr>
+                    <tr>
+                        <td><strong>💵 Профит USD</strong></td>
+                        <td>Прибыль/убыток в долларах</td>
+                        <td>+$156.25</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📊 Профит %</strong></td>
+                        <td>Прибыль/убыток в процентах</td>
+                        <td>+12.50%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>⏱️ Длительность</strong></td>
+                        <td>Время удержания позиции</td>
+                        <td>45 минут</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>3️⃣ Автообновление данных</h2>
+            <p>
+                Используйте выпадающее меню <strong>"Обновление"</strong> для выбора интервала
+                автоматического обновления таблицы торгов.
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Интервал</th>
+                        <th>Описание</th>
+                        <th>Рекомендация</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>1 сек</strong></td>
+                        <td>Максимально часто, высокая нагрузка на сеть и ПК</td>
+                        <td>Для активного дневного мониторинга</td>
+                    </tr>
+                    <tr>
+                        <td><strong>5 сек</strong> <span class="badge">По умолчанию</span></td>
+                        <td>Оптимально для большинства пользователей</td>
+                        <td>✅ Рекомендуется</td>
+                    </tr>
+                    <tr>
+                        <td><strong>10 сек</strong></td>
+                        <td>Экономит трафик и ресурсы процессора</td>
+                        <td>Для слабого интернета или старых ПК</td>
+                    </tr>
+                    <tr>
+                        <td><strong>30 сек</strong></td>
+                        <td>Редкое обновление, минимальная нагрузка</td>
+                        <td>Для фонового мониторинга ночью</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Отключено</strong></td>
+                        <td>Ручное обновление по нажатию F5</td>
+                        <td>Для максимальной экономии трафика</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>4️⃣ Пагинация (размер страницы)</h2>
+            <p>
+                Используйте меню <strong>"На странице"</strong> для выбора количества сделок,
+                отображаемых на одной странице.
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Размер</th>
+                        <th>Записей</th>
+                        <th>Плюсы</th>
+                        <th>Минусы</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>10</strong></td>
+                        <td>10 сделок</td>
+                        <td>Быстрая загрузка</td>
+                        <td>Много пролистывания</td>
+                    </tr>
+                    <tr>
+                        <td><strong>20</strong> <span class="badge">По умолчанию</span></td>
+                        <td>20 сделок</td>
+                        <td>Оптимален для большинства</td>
+                        <td>—</td>
+                    </tr>
+                    <tr>
+                        <td><strong>50</strong></td>
+                        <td>50 сделок</td>
+                        <td>Видно много сделок</td>
+                        <td>Требует быстрый интернет</td>
+                    </tr>
+                    <tr>
+                        <td><strong>100</strong></td>
+                        <td>100 сделок</td>
+                        <td>Просмотр большого объёма</td>
+                        <td>Может замедлить страницу</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Все</strong></td>
+                        <td>Все доступные</td>
+                        <td>Полный обзор</td>
+                        <td>Требует много памяти</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>5️⃣ Фильтры и экспорт</h2>
+
+            <h3>📋 Фильтры</h3>
+            <p>Используйте следующие фильтры для быстрого поиска нужных сделок:</p>
+
+            <ul>
+                <li>
+                    <strong>По стратегии:</strong> Выберите конкретную стратегию
+                    (например, "Grid BTC/USDT #1") для просмотра только её сделок
+                </li>
+                <li>
+                    <strong>По типу:</strong> Фильтруйте по типу торговой стратегии
+                    (Grid, Scalping, DCA, Trend, Arbitrage)
+                </li>
+                <li>
+                    <strong>По дате:</strong> Выберите конкретную дату или диапазон дат
+                    для анализа результатов за период
+                </li>
+                <li>
+                    <strong>По режиму:</strong> Выбирайте между Demo (демо-счёт)
+                    и Live (реальный счёт)
+                </li>
+            </ul>
+
+            <div class="highlight-box">
+                <h4>🎯 Совет по фильтрам</h4>
+                <p>
+                    Комбинируйте фильтры! Например, выберите "Grid" + "Demo" + "Сегодня"
+                    для просмотра сегодняшних демо сделок по Grid стратегии.
+                </p>
+            </div>
+
+            <h3>📊 Экспорт в Excel</h3>
+            <p>
+                Нажмите кнопку <strong>"Экспорт в Excel"</strong> для скачивания выбранных сделок
+                в формате .xlsx файла.
+            </p>
+            <ul>
+                <li>Файл содержит все видимые колонки таблицы</li>
+                <li>Применяются все активные фильтры</li>
+                <li>Готов для анализа в Microsoft Excel или Google Sheets</li>
+                <li>Содержит итоговый профит и статистику</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>6️⃣ Полезные советы</h2>
+
+            <div class="tips">
+                <h3>💡 Рекомендации для оптимального использования</h3>
+                <ul>
+                    <li>
+                        <strong>Интервал обновления:</strong> Установите 5-10 сек для оптимального баланса
+                        между свежестью данных и нагрузкой на сеть
+                    </li>
+                    <li>
+                        <strong>Размер страницы:</strong> Используйте 20-50 записей для быстрой загрузки
+                        на мобильных устройствах
+                    </li>
+                    <li>
+                        <strong>Ежедневный экспорт:</strong> Экспортируйте сделки в конце дня для анализа
+                        и архивирования для целей бухгалтерии
+                    </li>
+                    <li>
+                        <strong>Сравнение стратегий:</strong> Используйте фильтр по стратегии для сравнения
+                        производительности разных подходов
+                    </li>
+                    <li>
+                        <strong>Анализ периодов:</strong> Смотрите результаты за конкретные дни/недели/месяцы
+                        для оценки трендов
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>
+                📄 Инструкция по торговле | Cripto Grid Trading Bot v2.0<br>
+                Для сохранения в PDF используйте: Ctrl+P (или Cmd+P) → "Сохранить как PDF"<br>
+                <em>Последнее обновление: 21.07.2026</em>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
