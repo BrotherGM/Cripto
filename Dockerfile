@@ -1,26 +1,33 @@
 FROM python:3.13-slim
 
-# Не пишем .pyc, вывод сразу в лог
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
-
-# procps -> pgrep (нужен runner'у для управления фоновым циклом торговли)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends procps \
+# Установить системные зависимости
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    gcc \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
+# Рабочая директория
 WORKDIR /app
 
+# Копировать requirements
 COPY requirements.txt .
-RUN pip install -r requirements.txt
 
+# Установить Python зависимости
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
+
+# Копировать код приложения
 COPY . .
 
-# Точка входа: миграции + сбор статики, затем команда из CMD
-COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Создать пользователя для приложения
+RUN useradd -m -u 1000 cripto && chown -R cripto:cripto /app
 
-EXPOSE 8000
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "cripto.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+# Переключиться на пользователя
+USER cripto
+
+# Собрать статические файлы
+RUN python manage.py collectstatic --noinput --settings=cripto.settings || true
+
+# Точка входа: применить миграции и запустить gunicorn
+ENTRYPOINT ["sh", "-c"]
+CMD ["python manage.py migrate --noinput && gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 cripto.wsgi:application"]

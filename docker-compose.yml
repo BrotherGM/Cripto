@@ -1,31 +1,123 @@
+version: '3.9'
+
 services:
-  web:
-    build: .
-    container_name: cripto_web
-    env_file: .env
-    # Сеть хоста: контейнер обращается к Postgres по localhost — так же, как
-    # обычное приложение на сервере (как ваш рабочий karting). Не требует
-    # перенастройки Postgres (listen_addresses/pg_hba). Подходит для Linux-сервера.
-    network_mode: "host"
+  # PostgreSQL БД
+  postgres:
+    image: postgres:15-alpine
+    container_name: cripto-db
     environment:
-      DB_HOST: localhost
-    # gunicorn слушает порт 8077 прямо на хосте (при host-сети ports: не используется)
-    command: gunicorn cripto.wsgi:application --bind 0.0.0.0:8077 --workers 3 --timeout 120
+      POSTGRES_DB: cripto_prod
+      POSTGRES_USER: cripto
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-your-secure-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cripto -d cripto_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cripto-network
+
+  # Django Web приложение
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cripto-web
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - DB_NAME=cripto_prod
+      - DB_USER=cripto
+      - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - TRADING_MODE=demo
+      - OKX_API_KEY=${OKX_API_KEY}
+      - OKX_API_SECRET=${OKX_API_SECRET}
+      - OKX_PASSPHRASE=${OKX_PASSPHRASE}
+      - OKX_FLAG=1
+      - OKX_LIVE_API_KEY=${OKX_LIVE_API_KEY}
+      - OKX_LIVE_API_SECRET=${OKX_LIVE_API_SECRET}
+      - OKX_LIVE_PASSPHRASE=${OKX_LIVE_PASSPHRASE}
+      - OKX_LIVE_FLAG=1
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./logs:/app/logs
+    networks:
+      - cripto-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Trading Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cripto-worker
+    command: sh -c "python manage.py run_bots --interval 5 --reconcile-every 12"
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - DB_NAME=cripto_prod
+      - DB_USER=cripto
+      - DB_PASSWORD=${DB_PASSWORD:-your-secure-password}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - TRADING_MODE=demo
+      - OKX_API_KEY=${OKX_API_KEY}
+      - OKX_API_SECRET=${OKX_API_SECRET}
+      - OKX_PASSPHRASE=${OKX_PASSPHRASE}
+      - OKX_FLAG=1
+      - OKX_LIVE_API_KEY=${OKX_LIVE_API_KEY}
+      - OKX_LIVE_API_SECRET=${OKX_LIVE_API_SECRET}
+      - OKX_LIVE_PASSPHRASE=${OKX_LIVE_PASSPHRASE}
+      - OKX_LIVE_FLAG=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - cripto-network
     restart: unless-stopped
 
-  # Единый воркер-супервизор: держит торговые циклы всех стратегий, реагирует на
-  # исполнения/стоп-лосс, сверяет БД с биржей. Единственный экземпляр гарантирует
-  # advisory-lock внутри run_bots. Именно он приводит факт к desired_state, поэтому
-  # веб можно перезапускать без потери состояния торговли.
-  worker:
-    build: .
-    container_name: cripto_worker
-    env_file: .env
-    network_mode: "host"
-    environment:
-      DB_HOST: localhost
-      APP_ROLE: worker      # не собирает статику/суперюзера; миграции — под общим advisory-lock
-    command: python manage.py run_bots --interval 5 --reconcile-every 12
-    restart: unless-stopped
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: cripto-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./staticfiles:/app/staticfiles:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - web
+    networks:
+      - cripto-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  cripto-network:
+    driver: bridge
