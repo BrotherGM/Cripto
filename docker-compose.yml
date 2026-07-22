@@ -19,7 +19,7 @@ services:
     network_mode: "host"
     environment:
       - DB_HOST=localhost
-    command: python manage.py run_bots --interval 5 --reconcile-every 12
+    command: ["python manage.py run_bots --interval 5 --reconcile-every 12"]
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
