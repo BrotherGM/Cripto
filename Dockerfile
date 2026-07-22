@@ -1,5 +1,7 @@
 FROM python:3.13-slim
 
+ENV PYTHONUNBUFFERED=1
+
 # Установить системные зависимости
 RUN apt-get update && apt-get install -y \
     postgresql-client \
