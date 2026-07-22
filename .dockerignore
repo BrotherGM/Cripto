@@ -9,6 +9,7 @@ dist
 build
 *.egg-info
 .venv
+venv
 venv313
 .env
 .env.production
